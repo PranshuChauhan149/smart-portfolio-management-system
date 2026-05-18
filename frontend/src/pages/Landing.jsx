@@ -31,7 +31,7 @@ export default function Landing() {
             <span style={{ fontSize: 13, fontWeight: 600, color: '#6366F1' }}>The Future of Investment Tracking</span>
           </div>
           
-          <h1 style={{ fontSize: 'clamp(40px, 8vw, 72px)', fontWeight: 800, lineHeight: 1.1, marginBottom: 24, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+          <h1 className="hero-title" style={{ fontSize: 'clamp(40px, 8vw, 72px)', fontWeight: 800, lineHeight: 1.1, marginBottom: 24, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
             {t('landing.title').split(' ').map((word, i, arr) => 
               i > arr.length - 3 ? <span key={i} className="gradient-text">{word} </span> : word + ' '
             )}

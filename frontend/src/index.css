@@ -536,3 +536,70 @@ body {
 /* Page transitions */
 .page-enter { opacity: 0; transform: translateY(20px); }
 .page-enter-active { opacity: 1; transform: translateY(0); transition: all 0.4s ease; }
+
+/* ======================== RESPONSIVE MEDIA QUERIES ======================== */
+@media (max-width: 768px) {
+  .content-area {
+    padding: 16px;
+  }
+  .section-title {
+    font-size: 22px;
+  }
+  .section-subtitle {
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    padding: 16px;
+  }
+  .glass-card {
+    padding: 16px !important;
+  }
+  .glass-card h3 {
+    font-size: 16px !important;
+    margin-bottom: 16px !important;
+  }
+  .btn-primary, .btn-secondary, .btn-success, .btn-danger {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  .input-field, .select-field {
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+  .modal-content {
+    padding: 20px;
+    margin: 10px;
+  }
+  /* Public Navbar */
+  .desktop-nav {
+    display: none !important;
+  }
+  .desktop-actions {
+    display: none !important;
+  }
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+  .lang-text {
+    display: none; /* Hide language text on mobile to save space */
+  }
+  .logo-text {
+    font-size: 16px !important;
+  }
+  
+  /* Landing fixes */
+  .hero-title {
+    font-size: clamp(32px, 10vw, 50px) !important;
+  }
+}
+
+/* Default state for mobile-only elements */
+.mobile-menu-btn {
+  display: none !important;
+}
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+}

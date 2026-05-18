@@ -185,7 +185,7 @@ class AdminController extends Controller
 
         $topInvestors = User::where('role', 'user')
             ->withCount('portfolios')
-            ->having('portfolios_count', '>', 0)
+            ->has('portfolios')
             ->orderByDesc('portfolios_count')
             ->limit(5)
             ->get()

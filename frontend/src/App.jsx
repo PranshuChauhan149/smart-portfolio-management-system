@@ -20,6 +20,7 @@ import MarketTrends from './pages/MarketTrends';
 import Notifications from './pages/Notifications';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
+import NotFound from './pages/NotFound';
 
 // Admin Pages
 import AdminDashboard from './pages/AdminDashboard';
@@ -88,7 +89,7 @@ function App() {
           </Route>
 
           {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     </>
