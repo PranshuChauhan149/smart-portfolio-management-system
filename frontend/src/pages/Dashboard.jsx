@@ -1,351 +1,774 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar, Legend
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  Cell,
+  Legend,
+  PieChart,
+  Pie,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
 import {
-  DollarSign, TrendingUp, TrendingDown, Shield, ArrowUpRight, ArrowDownRight,
-  Plus, RefreshCw, Lightbulb, Activity
+  Activity,
+  DollarSign,
+  Lightbulb,
+  Plus,
+  RefreshCw,
+  Shield,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
-import { portfolioService, transactionService, adviceService } from '../services';
-import { StatCard, GlassCard, SkeletonCard, RiskBadge, EmptyState, Button } from '../components/UI';
-import { formatCurrency, formatPercent, formatDate, getAssetColor, getAssetLabel } from '../utils/format';
 import toast from 'react-hot-toast';
+import { Button, GlassCard, Modal, SkeletonCard, StatCard, RiskBadge } from '../components/UI';
+import {
+  AssetDetailModal,
+  NotificationBell,
+} from '../components/InvestmentWidgets';
+import { portfolioService, transactionService, adviceService } from '../services';
+import {
+  addInvestment,
+  hydratePortfolioData,
+  markAllNotificationsRead,
+  markNotificationRead,
+  refreshInsights,
+  selectPortfolioAssets,
+  selectPortfolioNotifications,
+  selectPortfolioTransactions,
+  selectWatchlist,
+  toggleWatchlist,
+} from '../store/portfolioSlice';
+import {
+  calculatePortfolioSummary,
+  generateSmartAdvice,
+  getTopTrendingAssets,
+} from '../data/investmentData';
+import { formatCurrency, formatDate, formatPercent } from '../utils/format';
 
 const COLORS = ['#6366F1', '#8B5CF6', '#06B6D4', '#22C55E', '#F59E0B'];
 
-function useCountUp(target, duration = 1500) {
+function useAnimatedNumber(target, duration = 850) {
   const [value, setValue] = useState(0);
-  const frameRef = useRef(null);
+  const previousRef = useRef(0);
 
   useEffect(() => {
-    if (!target) return;
-    const start = Date.now();
-    const animate = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / duration, 1);
+    const startValue = previousRef.current;
+    const startTime = performance.now();
+    let frameId;
+
+    const tick = (time) => {
+      const progress = Math.min((time - startTime) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(target * eased);
-      if (progress < 1) frameRef.current = requestAnimationFrame(animate);
+      const nextValue = startValue + (target - startValue) * eased;
+      setValue(nextValue);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick);
+      } else {
+        previousRef.current = target;
+      }
     };
-    frameRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameRef.current);
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
   }, [target, duration]);
 
   return value;
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="custom-tooltip">
-        <p style={{ marginBottom: 4, color: 'var(--text-muted)' }}>{label}</p>
-        {payload.map((p, i) => (
-          <p key={i} style={{ color: p.color || 'var(--text-primary)', fontWeight: 600 }}>
-            {p.name}: {formatCurrency(p.value)}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="custom-tooltip">
+      <p style={{ marginBottom: 4, color: 'var(--text-muted)' }}>{label}</p>
+      {payload.map((item) => (
+        <p key={item.dataKey} style={{ color: item.color || 'var(--text-primary)', fontWeight: 600 }}>
+          {item.name}: {formatCurrency(item.value)}
+        </p>
+      ))}
+    </div>
+  );
 };
 
 export default function Dashboard() {
+  const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
-  const [summary, setSummary] = useState(null);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [advices, setAdvices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const assets = useSelector(selectPortfolioAssets);
+  const notifications = useSelector(selectPortfolioNotifications);
+  const transactions = useSelector(selectPortfolioTransactions);
+  const watchlist = useSelector(selectWatchlist);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeAsset, setActiveAsset] = useState(null);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [transactionFilter, setTransactionFilter] = useState('all');
 
-  const totalInvestment = useCountUp(summary?.total_investment || 0);
-  const totalValue = useCountUp(summary?.total_current_value || 0);
-  const profitLoss = useCountUp(Math.abs(summary?.total_profit_loss || 0));
-  const roi = useCountUp(Math.abs(summary?.roi || 0));
+  const summary = useMemo(() => calculatePortfolioSummary(assets), [assets]);
+  const trendingAssets = useMemo(() => getTopTrendingAssets(assets).slice(0, 5), [assets]);
+  const smartAdvice = useMemo(() => generateSmartAdvice(assets), [assets]);
+
+  const animatedInvestment = useAnimatedNumber(summary.totalInvestment);
+  const animatedCurrentValue = useAnimatedNumber(summary.totalCurrentValue);
+  const animatedProfitLoss = useAnimatedNumber(Math.abs(summary.totalProfitLoss));
+  const loading = false;
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const loadDashboard = async () => {
+      try {
+        const [assetsRes, transactionsRes] = await Promise.all([
+          portfolioService.assets(),
+          transactionService.list({ per_page: 20 }),
+        ]);
 
-  const fetchData = async () => {
+        dispatch(hydratePortfolioData({
+          assets: assetsRes.data.data,
+          transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
+        }));
+      } catch {
+        // keep the local dummy data when backend is unavailable
+      }
+    };
+
+    loadDashboard();
+  }, [dispatch]);
+
+  const handleAddInvestment = async (asset) => {
     try {
-      const [summaryRes, activityRes, adviceRes] = await Promise.all([
-        portfolioService.summary(),
-        transactionService.recent(),
-        adviceService.list(),
-      ]);
-      setSummary(summaryRes.data.data);
-      setRecentActivity(activityRes.data.data || []);
-      setAdvices(adviceRes.data.data?.data || []);
+      await portfolioService.addInvestment({
+        asset_name: asset.assetName,
+        asset_type: asset.assetType,
+        symbol: asset.symbol,
+        quantity: 1,
+        buy_price: asset.buyPrice || asset.currentPrice,
+        current_price: asset.currentPrice,
+        risk_level: asset.riskLevel,
+        sector: asset.sector,
+        notes: asset.description,
+      });
     } catch {
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
+      // fall back to optimistic local update
     }
+
+    dispatch(addInvestment({ ...asset, quantity: 1 }));
+    toast.success('Investment Added Successfully');
   };
 
-  const handleRefresh = async () => {
+  const handleToggleWatchlist = (asset) => {
+    dispatch(toggleWatchlist(asset.id));
+    toast.success(watchlist.includes(asset.id) ? `${asset.assetName} removed from watchlist` : `${asset.assetName} added to watchlist`);
+  };
+
+  const handleRefresh = () => {
     setRefreshing(true);
-    await fetchData();
-    setRefreshing(false);
-    toast.success('Dashboard refreshed!');
+    Promise.all([
+      portfolioService.assets(),
+      transactionService.list({ per_page: 20 }),
+      portfolioService.riskAnalysis(),
+      adviceService.list(),
+    ])
+      .then(([assetsRes, transactionsRes]) => {
+        dispatch(hydratePortfolioData({
+          assets: assetsRes.data.data,
+          transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
+        }));
+        dispatch(refreshInsights());
+        dispatch(markAllNotificationsRead());
+        toast.success('Dashboard refreshed!');
+      })
+      .catch(() => {
+        dispatch(refreshInsights());
+        dispatch(markAllNotificationsRead());
+        toast.success('Dashboard refreshed!');
+      })
+      .finally(() => setTimeout(() => setRefreshing(false), 450));
   };
 
-  const assetAllocationData = summary?.asset_allocation
-    ? Object.entries(summary.asset_allocation).map(([type, data]) => ({
-        name: getAssetLabel(type),
-        value: Math.round(data.value),
-        percentage: Math.round(data.percentage),
-      }))
-    : [];
+  const filteredTransactions = useMemo(() => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - 7);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const profitLossValue = summary?.total_profit_loss || 0;
-  const isProfit = profitLossValue >= 0;
+    return transactions.filter((transaction) => {
+      const createdAt = new Date(transaction.created_at || transaction.createdAt || '1970-01-01T00:00:00.000Z');
+      const profitLoss = Number(transaction.profit_loss || transaction.amount || 0);
+
+      if (transactionFilter === 'today' && createdAt < startOfDay) return false;
+      if (transactionFilter === 'week' && createdAt < startOfWeek) return false;
+      if (transactionFilter === 'month' && createdAt < startOfMonth) return false;
+      if (transactionFilter === 'profit' && profitLoss < 0) return false;
+      if (transactionFilter === 'loss' && profitLoss >= 0) return false;
+      if (transactionFilter === 'buy' && transaction.action !== 'buy') return false;
+      if (transactionFilter === 'sell' && transaction.action !== 'sell') return false;
+      return true;
+    });
+  }, [transactions, transactionFilter]);
+
+  const allocationData = summary.assetAllocation.map((entry, index) => ({
+    name: entry.name,
+    value: Math.round(entry.current),
+    percentage: Math.round(entry.percentage),
+    fill: COLORS[index % COLORS.length],
+  }));
+
+  const riskDistributionData = summary.riskDistribution.map((entry, index) => ({
+    name: entry.name.toUpperCase(),
+    value: entry.value,
+    fill: COLORS[index % COLORS.length],
+  }));
+
+  const profitLossData = summary.profitLossByAsset.slice(0, 6).map((entry, index) => ({
+    name: entry.name,
+    profitLoss: Math.round(entry.profitLoss),
+    fill: entry.profitLoss >= 0 ? COLORS[index % COLORS.length] : '#EF4444',
+  }));
 
   return (
     <div className="content-area">
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 999,
+              background: 'rgba(99,102,241,0.12)',
+              border: '1px solid rgba(99,102,241,0.18)',
+              color: '#A5B4FC',
+              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 14,
+            }}
+          >
+            <SparklineIcon /> AI-powered investment cockpit
+          </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="section-title"
           >
-            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0]}! 👋
+            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0] || 'Investor'}.
           </motion.h1>
-          <p className="section-subtitle">Here's your portfolio overview for today</p>
+          <p className="section-subtitle">
+            Your dashboard now shows live-style dummy investing insights, trend picks, alerts, and risk signals in one premium view.
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <NotificationBell
+            notifications={notifications}
+            onMarkRead={(id) => dispatch(markNotificationRead(id))}
+            onMarkAllRead={() => dispatch(markAllNotificationsRead())}
+          />
           <Button variant="secondary" onClick={handleRefresh} loading={refreshing} size="sm">
             <RefreshCw size={14} /> Refresh
           </Button>
           <Link to="/portfolio">
             <Button size="sm">
-              <Plus size={14} /> Add Investment
+              <Plus size={14} /> Open Portfolio
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 32 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
         {loading ? (
-          Array(4).fill(0).map((_, i) => <SkeletonCard key={i} />)
+          Array(4).fill(0).map((_, index) => <SkeletonCard key={index} />)
         ) : (
           <>
             <StatCard
               title="Total Investment"
-              value={totalInvestment}
+              value={animatedInvestment}
               prefix="₹"
               icon={DollarSign}
               color="#6366F1"
-              trendValue={`${summary?.total_assets || 0} assets`}
+              trendValue={`${summary.totalInvestment ? assets.length : 0} assets`}
               trend="neutral"
             />
             <StatCard
               title="Portfolio Value"
-              value={totalValue}
+              value={animatedCurrentValue}
               prefix="₹"
               icon={TrendingUp}
               color="#8B5CF6"
-              trendValue={formatPercent(summary?.roi || 0)}
-              trend={isProfit ? 'up' : 'down'}
+              trendValue={formatPercent(summary.roi)}
+              trend={summary.totalProfitLoss >= 0 ? 'up' : 'down'}
             />
             <StatCard
               title="Profit / Loss"
-              value={profitLoss}
-              prefix={`${isProfit ? '+' : '-'}₹`}
-              icon={isProfit ? TrendingUp : TrendingDown}
-              color={isProfit ? '#22C55E' : '#EF4444'}
-              trendValue={`ROI: ${formatPercent(summary?.roi || 0)}`}
-              trend={isProfit ? 'up' : 'down'}
+              value={animatedProfitLoss}
+              prefix={`${summary.totalProfitLoss >= 0 ? '+' : '-'}₹`}
+              icon={summary.totalProfitLoss >= 0 ? TrendingUp : TrendingDown}
+              color={summary.totalProfitLoss >= 0 ? '#22C55E' : '#EF4444'}
+              trendValue={`ROI: ${formatPercent(summary.roi)}`}
+              trend={summary.totalProfitLoss >= 0 ? 'up' : 'down'}
             />
             <StatCard
               title="Risk Score"
-              value={summary?.risk_score || 0}
+              value={summary.riskScore}
               suffix="/100"
               icon={Shield}
               color="#F59E0B"
-              trendValue={summary?.risk_score < 40 ? 'Low Risk' : summary?.risk_score < 70 ? 'Medium Risk' : 'High Risk'}
+              trendValue={summary.riskLevel === 'low' ? 'Low Risk' : summary.riskLevel === 'medium' ? 'Medium Risk' : 'High Risk'}
               trend="neutral"
             />
           </>
         )}
       </div>
 
-      {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 24 }}>
-        {/* Portfolio Growth Chart */}
-        <GlassCard hover={false} style={{ padding: 24 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Portfolio Growth</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>Investment vs Current Value</p>
-          {loading ? (
-            <div className="skeleton" style={{ height: 200 }} />
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={summary?.monthly_performance || []}>
-                <defs>
-                  <linearGradient id="investGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="valueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22C55E" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#64748B', fontSize: 11 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}K`} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="investment" name="Investment" stroke="#6366F1" strokeWidth={2} fill="url(#investGrad)" dot={false} />
-                <Area type="monotone" dataKey="value" name="Value" stroke="#22C55E" strokeWidth={2} fill="url(#valueGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </GlassCard>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title" style={{ fontSize: 24, marginBottom: 4 }}>Top Trending Assets</h2>
+            <p className="section-subtitle" style={{ marginBottom: 0 }}>Quick rows for the most active assets with instant add and detail actions.</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <RiskBadge level={summary.riskLevel} />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{summary.riskScore}/100 risk score</span>
+          </div>
+        </div>
 
-        {/* Asset Allocation */}
-        <GlassCard hover={false} style={{ padding: 24 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Asset Allocation</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>Distribution by asset type</p>
-          {loading ? (
-            <div className="skeleton" style={{ height: 200 }} />
-          ) : assetAllocationData.length === 0 ? (
-            <EmptyState icon={Activity} title="No data" description="Add investments to see allocation" />
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-              <ResponsiveContainer width="50%" height={180}>
-                <PieChart>
-                  <Pie data={assetAllocationData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" strokeWidth={0}>
-                    {assetAllocationData.map((entry, index) => (
-                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v) => formatCurrency(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ flex: 1 }}>
-                {assetAllocationData.map((entry, i) => (
-                  <div key={entry.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{entry.name}</span>
+        <GlassCard hover={false} style={{ padding: 0, overflowX: 'auto' }}>
+          <table className="data-table" style={{ minWidth: 980 }}>
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Symbol</th>
+                <th>Current Price</th>
+                <th>Daily Growth</th>
+                <th>Risk</th>
+                <th>ROI</th>
+                <th>Type</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trendingAssets.map((asset, index) => (
+                <motion.tr
+                  key={asset.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setActiveAsset(asset)}
+                >
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(99,102,241,0.14)', display: 'grid', placeItems: 'center' }}>
+                        <span style={{ fontWeight: 700, color: '#C4B5FD', fontSize: 12 }}>{asset.symbol.slice(0, 2)}</span>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{asset.assetName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{asset.sector}</div>
+                      </div>
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{entry.percentage}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                  </td>
+                  <td>{asset.symbol}</td>
+                  <td>{formatCurrency(asset.currentPrice)}</td>
+                  <td style={{ color: asset.growth >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>{formatPercent(asset.growth)}</td>
+                  <td><RiskBadge level={asset.riskLevel} /></td>
+                  <td>{formatPercent(asset.roi)}</td>
+                  <td>{asset.assetType.toUpperCase()}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: 8 }}>
+                      <Button size="sm" onClick={(event) => { event.stopPropagation(); handleAddInvestment(asset); }}>Quick Add</Button>
+                      <Button variant="secondary" size="sm" onClick={(event) => { event.stopPropagation(); setActiveAsset(asset); }}>View</Button>
+                    </div>
+                  </td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
         </GlassCard>
       </div>
 
-      {/* Bottom Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
-        {/* Recent Activity */}
+    <div
+  style={{
+    display: 'grid',
+    gridTemplateColumns:
+      window.innerWidth <= 768
+        ? '1fr'
+        : 'repeat(2, minmax(0, 1fr))',
+    gap: 20,
+    marginBottom: 24,
+    alignItems: 'stretch',
+  }}
+>
+  <GlassCard hover={false} style={{ padding: 24 }}>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+      }}
+    >
+      <div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+          Portfolio Growth
+        </h3>
+
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          Dummy growth curve for the current holdings
+        </p>
+      </div>
+
+      <Activity size={18} color="#6366F1" />
+    </div>
+
+    <ResponsiveContainer width="100%" height={240}>
+      <AreaChart data={summary.monthlyPerformance}>
+        <defs>
+          <linearGradient
+            id="dashboard-investment-grad"
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+          >
+            <stop offset="5%" stopColor="#6366F1" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
+          </linearGradient>
+
+          <linearGradient
+            id="dashboard-value-grad"
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+          >
+            <stop offset="5%" stopColor="#22C55E" stopOpacity={0.28} />
+            <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="rgba(255,255,255,0.05)"
+        />
+
+        <XAxis
+          dataKey="month"
+          tick={{ fill: '#64748B', fontSize: 11 }}
+        />
+
+        <YAxis
+          tick={{ fill: '#64748B', fontSize: 11 }}
+          tickFormatter={(value) =>
+            `₹${(value / 1000).toFixed(0)}K`
+          }
+        />
+
+        <Tooltip content={<CustomTooltip />} />
+
+        <Area
+          type="monotone"
+          dataKey="investment"
+          name="Investment"
+          stroke="#6366F1"
+          strokeWidth={2}
+          fill="url(#dashboard-investment-grad)"
+          dot={false}
+        />
+
+        <Area
+          type="monotone"
+          dataKey="value"
+          name="Value"
+          stroke="#22C55E"
+          strokeWidth={2}
+          fill="url(#dashboard-value-grad)"
+          dot={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  </GlassCard>
+
+  <GlassCard hover={false} style={{ padding: 24 }}>
+    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+      Asset Allocation
+    </h3>
+
+    <p
+      style={{
+        fontSize: 12,
+        color: 'var(--text-muted)',
+        marginBottom: 16,
+      }}
+    >
+      Distribution by asset class
+    </p>
+
+    <ResponsiveContainer width="100%" height={240}>
+      <PieChart>
+        <Pie
+          data={allocationData}
+          cx="50%"
+          cy="50%"
+          innerRadius={62}
+          outerRadius={88}
+          dataKey="value"
+          strokeWidth={0}
+        >
+          {allocationData.map((entry) => (
+            <Cell key={entry.name} fill={entry.fill} />
+          ))}
+        </Pie>
+
+        <Tooltip formatter={(value) => formatCurrency(value)} />
+
+        <Legend verticalAlign="bottom" />
+      </PieChart>
+    </ResponsiveContainer>
+  </GlassCard>
+
+  <GlassCard hover={false} style={{ padding: 24 }}>
+    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+      Risk Distribution
+    </h3>
+
+    <p
+      style={{
+        fontSize: 12,
+        color: 'var(--text-muted)',
+        marginBottom: 16,
+      }}
+    >
+      Count of holdings grouped by risk
+    </p>
+
+    <ResponsiveContainer width="100%" height={240}>
+      <BarChart data={riskDistributionData}>
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="rgba(255,255,255,0.05)"
+        />
+
+        <XAxis
+          dataKey="name"
+          tick={{ fill: '#64748B', fontSize: 11 }}
+        />
+
+        <YAxis
+          tick={{ fill: '#64748B', fontSize: 11 }}
+          allowDecimals={false}
+        />
+
+        <Tooltip />
+
+        <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+          {riskDistributionData.map((entry) => (
+            <Cell key={entry.name} fill={entry.fill} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </GlassCard>
+
+  <GlassCard hover={false} style={{ padding: 24 }}>
+    <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+      Profit / Loss Analytics
+    </h3>
+
+    <p
+      style={{
+        fontSize: 12,
+        color: 'var(--text-muted)',
+        marginBottom: 16,
+      }}
+    >
+      Best and worst contributing holdings
+    </p>
+
+    <ResponsiveContainer width="100%" height={240}>
+      <BarChart
+        data={profitLossData}
+        layout="vertical"
+        margin={{ left: 20 }}
+      >
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="rgba(255,255,255,0.05)"
+        />
+
+        <XAxis
+          type="number"
+          tick={{ fill: '#64748B', fontSize: 11 }}
+        />
+
+        <YAxis
+          type="category"
+          dataKey="name"
+          tick={{ fill: '#64748B', fontSize: 11 }}
+          width={54}
+        />
+
+        <Tooltip formatter={(value) => formatCurrency(value)} />
+
+        <Bar dataKey="profitLoss" radius={[0, 10, 10, 0]}>
+          {profitLossData.map((entry) => (
+            <Cell key={entry.name} fill={entry.fill} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </GlassCard>
+</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
         <GlassCard hover={false} style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600 }}>Recent Activity</h3>
-            <Link to="/portfolio" style={{ fontSize: 12, color: 'var(--color-primary)', textDecoration: 'none' }}>View all →</Link>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700 }}>Recent Transactions</h3>
+            <Link to="/portfolio" style={{ fontSize: 12, color: 'var(--color-primary)', textDecoration: 'none' }}>View full portfolio →</Link>
           </div>
-          {loading ? (
-            Array(4).fill(0).map((_, i) => (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 10 }} />
-                <div style={{ flex: 1 }}>
-                  <div className="skeleton" style={{ width: '70%', height: 14, marginBottom: 6 }} />
-                  <div className="skeleton" style={{ width: '40%', height: 12 }} />
-                </div>
-              </div>
-            ))
-          ) : recentActivity.length === 0 ? (
-            <EmptyState icon={Activity} title="No activity yet" description="Your transactions will appear here" />
-          ) : (
-            recentActivity.slice(0, 6).map((tx) => (
-              <motion.div
-                key={tx.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            {['all', 'today', 'week', 'month', 'profit', 'loss', 'buy', 'sell'].map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setTransactionFilter(filter)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: transactionFilter === filter ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.03)',
+                  color: transactionFilter === filter ? '#E0E7FF' : 'var(--text-muted)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
               >
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  background: tx.action === 'buy' ? 'rgba(34,197,94,0.15)' : tx.action === 'sell' ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.15)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  {tx.action === 'buy' ? <ArrowUpRight size={16} color="#22C55E" /> : tx.action === 'sell' ? <ArrowDownRight size={16} color="#EF4444" /> : <RefreshCw size={16} color="#6366F1" />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {tx.action?.toUpperCase()} {tx.asset_name}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(tx.created_at)}</p>
-                </div>
-                <p style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: tx.action === 'buy' ? 'var(--color-success)' : 'var(--color-danger)',
-                  flexShrink: 0,
-                }}>
-                  {tx.action === 'sell' ? '-' : '+'}{formatCurrency(tx.amount)}
-                </p>
-              </motion.div>
-            ))
-          )}
+                {filter === 'all' ? 'All' : filter[0].toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            {filteredTransactions.slice(0, 5).map((transaction) => {
+              const isBuy = transaction.action === 'buy';
+              const pnl = Number(transaction.profit_loss || (isBuy ? transaction.amount * 0.08 : -transaction.amount * 0.04));
+              return (
+                <motion.button
+                  key={transaction.id}
+                  whileHover={{ x: 4 }}
+                  onClick={() => setSelectedTransaction(transaction)}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.3fr repeat(4, minmax(0, 1fr))',
+                    gap: 12,
+                    textAlign: 'left',
+                    width: '100%',
+                    padding: '14px 16px',
+                    borderRadius: 16,
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    background: 'rgba(255,255,255,0.03)',
+                    cursor: 'pointer',
+                    color: 'inherit',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{transaction.asset_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{transaction.symbol}</div>
+                  </div>
+                  <div style={{ color: isBuy ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>{isBuy ? 'Buy' : 'Sell'}</div>
+                  <div style={{ fontWeight: 700 }}>{formatCurrency(transaction.amount)}</div>
+                  <div style={{ color: pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>{pnl >= 0 ? '+' : ''}{formatCurrency(pnl)}</div>
+                  <div style={{ color: 'var(--text-muted)' }}>{formatDate(transaction.created_at)}</div>
+                </motion.button>
+              );
+            })}
+          </div>
         </GlassCard>
 
-        {/* Smart Advice */}
         <GlassCard hover={false} style={{ padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700 }}>
               <Lightbulb size={16} style={{ display: 'inline', marginRight: 8, color: '#F59E0B' }} />
               Smart Advice
             </h3>
-            <Link to="/risk" style={{ fontSize: 12, color: 'var(--color-primary)', textDecoration: 'none' }}>View all →</Link>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Updated from portfolio allocation</span>
           </div>
-          {loading ? (
-            Array(3).fill(0).map((_, i) => (
-              <div key={i} className="skeleton" style={{ height: 72, marginBottom: 12, borderRadius: 10 }} />
-            ))
-          ) : advices.length === 0 ? (
-            <EmptyState icon={Lightbulb} title="No advice yet" description="Add investments to get personalized advice" />
-          ) : (
-            advices.slice(0, 4).map((advice, i) => (
-              <motion.div
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            {smartAdvice.map((advice) => (
+              <div
                 key={advice.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
                 style={{
-                  padding: '12px 14px',
-                  borderRadius: 10,
+                  padding: '14px 16px',
+                  borderRadius: 16,
                   background: advice.risk_level === 'high' ? 'rgba(239,68,68,0.08)' : advice.risk_level === 'low' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
                   border: `1px solid ${advice.risk_level === 'high' ? 'rgba(239,68,68,0.2)' : advice.risk_level === 'low' ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}`,
-                  marginBottom: 10,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                   <RiskBadge level={advice.risk_level} />
-                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, flex: 1 }}>
-                    {advice.message.length > 100 ? advice.message.substring(0, 100) + '...' : advice.message}
-                  </p>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-secondary)' }}>{advice.message}</p>
                 </div>
-              </motion.div>
-            ))
-          )}
+              </div>
+            ))}
+          </div>
         </GlassCard>
       </div>
+
+      <AssetDetailModal
+        asset={activeAsset}
+        isOpen={!!activeAsset}
+        onClose={() => setActiveAsset(null)}
+        onAddToPortfolio={handleAddInvestment}
+        onToggleWatchlist={handleToggleWatchlist}
+        isWatchlisted={!!activeAsset && watchlist.includes(activeAsset.id)}
+      />
+
+      <Modal
+        isOpen={!!selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+        title="Transaction Details"
+        maxWidth={680}
+      >
+        {selectedTransaction && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+              <InfoTile label="Transaction ID" value={selectedTransaction.id} />
+              <InfoTile label="Asset" value={selectedTransaction.asset_name} />
+              <InfoTile label="Quantity" value={selectedTransaction.quantity || 1} />
+              <InfoTile label="Type" value={selectedTransaction.action?.toUpperCase()} />
+              <InfoTile label="Amount" value={formatCurrency(selectedTransaction.amount)} />
+              <InfoTile label="Timestamp" value={formatDate(selectedTransaction.created_at)} />
+            </div>
+            <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Notes</div>
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                {selectedTransaction.notes || 'Dummy transaction created from live portfolio actions and backend synced events.'}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function SparklineIcon() {
+  return <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C4B5FD', boxShadow: '0 0 0 5px rgba(196,181,253,0.15)' }} />;
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div style={{ padding: 14, borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }

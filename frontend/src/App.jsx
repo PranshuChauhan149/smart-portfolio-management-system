@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Layouts & Routes
@@ -25,6 +25,7 @@ import NotFound from './pages/NotFound';
 // Admin Pages
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
+import AdminUserDetails from './pages/AdminUserDetails';
 import AdminAnalytics from './pages/AdminAnalytics';
 import AdminMessages from './pages/AdminMessages';
 
@@ -83,6 +84,7 @@ function App() {
             <Route element={<AppLayout />}>
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/users" element={<AdminUsers />} />
+              <Route path="/admin/users/:id" element={<AdminUserDetails />} />
               <Route path="/admin/analytics" element={<AdminAnalytics />} />
               <Route path="/admin/messages" element={<AdminMessages />} />
             </Route>

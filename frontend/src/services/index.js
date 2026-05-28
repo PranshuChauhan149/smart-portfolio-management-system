@@ -12,6 +12,7 @@ export const authService = {
 };
 
 export const portfolioService = {
+  assets: () => api.get('/assets'),
   list: (params) => api.get('/portfolio', { params }),
   create: (data) => api.post('/portfolio', data),
   update: (id, data) => api.put(`/portfolio/${id}`, data),
@@ -19,6 +20,9 @@ export const portfolioService = {
   show: (id) => api.get(`/portfolio/${id}`),
   summary: () => api.get('/portfolio/summary'),
   updatePrice: (id, price) => api.put(`/portfolio/${id}/price`, { current_price: price }),
+  riskAnalysis: () => api.get('/risk-analysis'),
+  addInvestment: (data) => api.post('/add-investment', data),
+  removeInvestment: (identifier) => api.delete('/remove-investment', { data: { portfolio_id: identifier, symbol: identifier } }),
 };
 
 export const transactionService = {

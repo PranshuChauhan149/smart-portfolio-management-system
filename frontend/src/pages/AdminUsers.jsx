@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Search, ShieldAlert, CheckCircle, XCircle, Trash2, Send } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ShieldAlert, CheckCircle, Trash2, Send, Eye } from 'lucide-react';
 import { adminService } from '../services';
 import { GlassCard, Button, Modal, Badge, InputField } from '../components/UI';
 import { formatDate } from '../utils/format';
 import toast from 'react-hot-toast';
 
 export default function AdminUsers() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -15,27 +17,35 @@ export default function AdminUsers() {
   const [formLoading, setFormLoading] = useState(false);
 
   useEffect(() => {
-    fetchUsers();
-  }, [search]);
+    let active = true;
 
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const res = await adminService.users({ search, per_page: 50 });
-      setUsers(res.data.data.data);
-    } catch (err) {
-      toast.error('Failed to fetch users');
-    } finally {
-      setLoading(false);
-    }
-  };
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await adminService.users({ search, per_page: 50 });
+        if (active) {
+          setUsers(res.data.data.data);
+        }
+      } catch {
+        toast.error('Failed to fetch users');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [search]);
 
   const updateStatus = async (id, status) => {
     try {
       await adminService.updateUserStatus(id, status);
       setUsers(users.map(u => u.id === id ? { ...u, status } : u));
       toast.success(`User marked as ${status}`);
-    } catch (err) {
+    } catch {
       toast.error('Failed to update status');
     }
   };
@@ -59,7 +69,7 @@ export default function AdminUsers() {
       toast.success(notifForm.user_id ? 'Notification sent to user' : 'Broadcast sent to all users');
       setIsNotifModalOpen(false);
       setNotifForm({ title: '', message: '', type: 'info', user_id: '' });
-    } catch (err) {
+    } catch {
       toast.error('Failed to send notification');
     } finally {
       setFormLoading(false);
@@ -131,7 +141,11 @@ export default function AdminUsers() {
                 </tr>
               ) : (
                 users.map(u => (
-                  <tr key={u.id}>
+                  <tr
+                    key={u.id}
+                    onClick={() => navigate(`/admin/users/${u.id}`)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td>
                       <div style={{ fontWeight: 600 }}>{u.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.email}</div>
@@ -142,24 +156,31 @@ export default function AdminUsers() {
                     <td>{formatDate(u.created_at)}</td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); navigate(`/admin/users/${u.id}`); }}
+                          style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }}
+                          title="View Details"
+                        >
+                          <Eye size={16} />
+                        </button>
                         {u.status !== 'active' && (
-                          <button onClick={() => updateStatus(u.id, 'active')} style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--color-success)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Activate">
+                          <button onClick={(e) => { e.stopPropagation(); updateStatus(u.id, 'active'); }} style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--color-success)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Activate">
                             <CheckCircle size={16} />
                           </button>
                         )}
                         {u.status !== 'suspended' && (
-                          <button onClick={() => updateStatus(u.id, 'suspended')} style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--color-warning)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Suspend">
+                          <button onClick={(e) => { e.stopPropagation(); updateStatus(u.id, 'suspended'); }} style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--color-warning)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Suspend">
                             <ShieldAlert size={16} />
                           </button>
                         )}
                         <button 
-                          onClick={() => { setNotifForm({ ...notifForm, user_id: u.id }); setIsNotifModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setNotifForm({ ...notifForm, user_id: u.id }); setIsNotifModalOpen(true); }}
                           style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--color-primary)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} 
                           title="Send Notification"
                         >
                           <Send size={16} />
                         </button>
-                        <button onClick={() => deleteUser(u.id)} style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Delete User">
+                        <button onClick={(e) => { e.stopPropagation(); deleteUser(u.id); }} style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }} title="Delete User">
                           <Trash2 size={16} />
                         </button>
                       </div>

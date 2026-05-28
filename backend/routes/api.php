@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\AdviceController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ContactController;
+use App\Http\Controllers\Api\MarketController;
 
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -27,6 +28,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/auth/change-password', [AuthController::class, 'changePassword']);
 
     // Portfolio
+    Route::get('/assets', [MarketController::class, 'assets']);
+    Route::get('/risk-analysis', [MarketController::class, 'riskAnalysis']);
+    Route::post('/add-investment', [MarketController::class, 'addInvestment']);
+    Route::delete('/remove-investment', [MarketController::class, 'removeInvestment']);
     Route::get('/portfolio/summary', [PortfolioController::class, 'summary']);
     Route::put('/portfolio/{portfolio}/price', [PortfolioController::class, 'updatePrice']);
     Route::apiResource('/portfolio', PortfolioController::class);

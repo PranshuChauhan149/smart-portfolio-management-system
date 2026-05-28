@@ -93,9 +93,11 @@ export function AssetTypeBadge({ type }) {
   const labels = {
     stocks: 'Stocks',
     crypto: 'Crypto',
+    etf: 'ETF',
+    mutual_funds: 'Mutual Funds',
+    commodities: 'Commodities',
     gold: 'Gold',
     bonds: 'Bonds',
-    mutual_funds: 'Mutual Funds',
   };
   return <Badge type="primary">{labels[type] || type}</Badge>;
 }

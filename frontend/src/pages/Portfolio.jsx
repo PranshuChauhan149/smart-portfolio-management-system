@@ -1,355 +1,621 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit2, Trash2, Search, Filter, RefreshCw, X, AlertCircle } from 'lucide-react';
-import { portfolioService } from '../services';
-import { GlassCard, Button, InputField, SelectField, Modal, AssetTypeBadge, RiskBadge, EmptyState } from '../components/UI';
-import { formatCurrency, formatDate, getAssetLabel } from '../utils/format';
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+  Search,
+  Filter,
+  ArrowUpDown,
+  Plus,
+  Sparkles,
+  Star,
+  Clock3,
+  TrendingUp,
+  Activity,
+  Target,
+  Shield,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+import { BarChart, Bar, CartesianGrid, Cell, PieChart, Pie, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { GlassCard, Button, Modal, EmptyState, RiskBadge, AssetTypeBadge, ProfitLoss } from '../components/UI';
+import { AssetAvatar, AssetDetailModal } from '../components/InvestmentWidgets';
+import { portfolioService, transactionService } from '../services';
+import {
+  addInvestment,
+  hydratePortfolioData,
+  removeInvestment,
+  selectPortfolioAssets,
+  selectPortfolioNotifications,
+  selectPortfolioTransactions,
+  selectWatchlist,
+  toggleWatchlist,
+} from '../store/portfolioSlice';
+import {
+  calculatePortfolioSummary,
+  generateSmartAdvice,
+  getTopTrendingAssets,
+} from '../data/investmentData';
+import { formatCurrency, formatDate, formatNumber, formatPercent } from '../utils/format';
+
+const assetClassOptions = [
+  { label: 'All Asset Classes', value: 'all' },
+  { label: 'Crypto', value: 'crypto' },
+  { label: 'Stocks', value: 'stocks' },
+  { label: 'ETF', value: 'etf' },
+  { label: 'Mutual Funds', value: 'mutual_funds' },
+  { label: 'Commodities', value: 'commodities' },
+];
+
+const performanceOptions = [
+  { label: 'All Performance', value: 'all' },
+  { label: 'Top Gainers', value: 'top_gainers' },
+  { label: 'Top Losers', value: 'top_losers' },
+  { label: 'Positive ROI', value: 'positive_roi' },
+  { label: 'Negative ROI', value: 'negative_roi' },
+];
+
+const riskOptions = [
+  { label: 'All Risk Levels', value: 'all' },
+  { label: 'Low Risk', value: 'low' },
+  { label: 'Medium Risk', value: 'medium' },
+  { label: 'High Risk', value: 'high' },
+];
+
+const sortOptions = [
+  { label: 'Highest Profit', value: 'highest_profit' },
+  { label: 'Lowest Profit', value: 'lowest_profit' },
+  { label: 'Highest Investment', value: 'highest_investment' },
+  { label: 'Alphabetical', value: 'alphabetical' },
+];
+
+function QuickAddModal({ isOpen, onClose, assets, onAddInvestment, onOpenAsset }) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Quick Add Investment" maxWidth={760}>
+      <p style={{ color: 'var(--text-muted)', marginBottom: 18 }}>
+        Add one of the top trending dummy investments instantly. Each click updates your dashboard totals and recent activity.
+      </p>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {assets.map((asset) => (
+          <div
+            key={asset.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              justifyContent: 'space-between',
+              padding: 14,
+              borderRadius: 16,
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{asset.assetName}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{asset.symbol} · {formatCurrency(asset.currentPrice)}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Button variant="secondary" size="sm" onClick={() => onOpenAsset(asset)}>View</Button>
+              <Button size="sm" onClick={() => onAddInvestment(asset)}>Add</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
 
 export default function Portfolio() {
-  const [portfolios, setPortfolios] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('');
-  
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [currentAsset, setCurrentAsset] = useState(null);
-  const [formLoading, setFormLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const dispatch = useDispatch();
+  const assets = useSelector(selectPortfolioAssets);
+  const notifications = useSelector(selectPortfolioNotifications);
+  const transactions = useSelector(selectPortfolioTransactions);
+  const watchlist = useSelector(selectWatchlist);
 
-  const [form, setForm] = useState({
-    asset_name: '',
-    asset_type: 'stocks',
-    ticker_symbol: '',
-    quantity: '',
-    buy_price: '',
-    current_price: '',
-    purchase_date: new Date().toISOString().split('T')[0],
-    notes: ''
-  });
+  const [search, setSearch] = useState('');
+  const [assetClass, setAssetClass] = useState('all');
+  const [performance, setPerformance] = useState('all');
+  const [riskLevel, setRiskLevel] = useState('all');
+  const [sortBy, setSortBy] = useState('highest_profit');
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+
+  const summary = useMemo(() => calculatePortfolioSummary(assets), [assets]);
+  const smartAdvice = useMemo(() => generateSmartAdvice(assets), [assets]);
+  const trendingAssets = useMemo(() => getTopTrendingAssets(assets), [assets]);
 
   useEffect(() => {
-    fetchPortfolios();
-  }, [search, filterType]);
+    const loadPortfolio = async () => {
+      try {
+        const [assetsRes, transactionsRes] = await Promise.all([
+          portfolioService.assets(),
+          transactionService.list({ per_page: 30 }),
+        ]);
 
-  const fetchPortfolios = async () => {
-    try {
-      setLoading(true);
-      const res = await portfolioService.list({ 
-        search, 
-        asset_type: filterType,
-        per_page: 50 // fetching more for a single page list view
-      });
-      setPortfolios(res.data.data.data);
-    } catch (error) {
-      toast.error('Failed to fetch portfolio data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenModal = (asset = null) => {
-    setErrors({});
-    if (asset) {
-      setCurrentAsset(asset);
-      setForm({
-        asset_name: asset.asset_name,
-        asset_type: asset.asset_type,
-        ticker_symbol: asset.ticker_symbol || '',
-        quantity: asset.quantity,
-        buy_price: asset.buy_price,
-        current_price: asset.current_price,
-        purchase_date: asset.purchase_date.split('T')[0],
-        notes: asset.notes || ''
-      });
-    } else {
-      setCurrentAsset(null);
-      setForm({
-        asset_name: '',
-        asset_type: 'stocks',
-        ticker_symbol: '',
-        quantity: '',
-        buy_price: '',
-        current_price: '',
-        purchase_date: new Date().toISOString().split('T')[0],
-        notes: ''
-      });
-    }
-    setIsModalOpen(true);
-  };
-
-  const handleFormChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    if (errors[e.target.name]) {
-      setErrors({ ...errors, [e.target.name]: '' });
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormLoading(true);
-    setErrors({});
-    try {
-      if (currentAsset) {
-        await portfolioService.update(currentAsset.id, form);
-        toast.success('Asset updated successfully');
-      } else {
-        await portfolioService.create(form);
-        toast.success('Asset added successfully');
+        dispatch(hydratePortfolioData({
+          assets: assetsRes.data.data,
+          transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
+        }));
+      } catch {
+        // fallback to local dummy state
       }
-      setIsModalOpen(false);
-      fetchPortfolios();
-    } catch (err) {
-      if (err.response?.data?.errors) {
-        setErrors(err.response.data.errors);
-      } else {
-        toast.error('An error occurred');
-      }
-    } finally {
-      setFormLoading(false);
+    };
+
+    loadPortfolio();
+  }, [dispatch]);
+
+  const filteredAssets = useMemo(() => {
+    let result = [...assets];
+    const query = search.trim().toLowerCase();
+
+    if (query) {
+      result = result.filter((asset) =>
+        asset.assetName.toLowerCase().includes(query) ||
+        asset.symbol.toLowerCase().includes(query)
+      );
     }
-  };
 
-  const handleOpenDeleteModal = (asset) => {
-    setCurrentAsset(asset);
-    setIsDeleteModalOpen(true);
-  };
+    if (assetClass !== 'all') {
+      result = result.filter((asset) => asset.assetType === assetClass);
+    }
 
-  const handleDelete = async () => {
+    if (riskLevel !== 'all') {
+      result = result.filter((asset) => asset.riskLevel === riskLevel);
+    }
+
+    if (performance === 'top_gainers') {
+      result = result.filter((asset) => asset.roi >= 0).sort((a, b) => b.roi - a.roi);
+    } else if (performance === 'top_losers') {
+      result = result.filter((asset) => asset.roi < 0).sort((a, b) => a.roi - b.roi);
+    } else if (performance === 'positive_roi') {
+      result = result.filter((asset) => asset.roi >= 0);
+    } else if (performance === 'negative_roi') {
+      result = result.filter((asset) => asset.roi < 0);
+    }
+
+    switch (sortBy) {
+      case 'highest_profit':
+        result.sort((a, b) => (b.currentValue - b.investedAmount) - (a.currentValue - a.investedAmount));
+        break;
+      case 'lowest_profit':
+        result.sort((a, b) => (a.currentValue - a.investedAmount) - (b.currentValue - b.investedAmount));
+        break;
+      case 'highest_investment':
+        result.sort((a, b) => b.investedAmount - a.investedAmount);
+        break;
+      case 'alphabetical':
+        result.sort((a, b) => a.assetName.localeCompare(b.assetName));
+        break;
+      default:
+        break;
+    }
+
+    return result;
+  }, [assets, search, assetClass, performance, riskLevel, sortBy]);
+
+  const handleAddInvestment = async (asset) => {
     try {
-      setFormLoading(true);
-      await portfolioService.delete(currentAsset.id);
-      toast.success('Asset sold/removed successfully');
-      setIsDeleteModalOpen(false);
-      fetchPortfolios();
-    } catch (err) {
-      toast.error('Failed to remove asset');
-    } finally {
-      setFormLoading(false);
+      await portfolioService.addInvestment({
+        asset_name: asset.assetName,
+        asset_type: asset.assetType,
+        symbol: asset.symbol,
+        quantity: 1,
+        buy_price: asset.buyPrice || asset.currentPrice,
+        current_price: asset.currentPrice,
+        risk_level: asset.riskLevel,
+        notes: asset.description,
+      });
+    } catch {
+      // fallback to local state when the API is unavailable
     }
+
+    dispatch(addInvestment({ ...asset, quantity: 1 }));
+    toast.success('Investment Added Successfully');
   };
 
-  const totalInvestment = portfolios.reduce((sum, asset) => sum + Number(asset.buy_price || 0) * Number(asset.quantity || 0), 0);
-  const totalCurrentValue = portfolios.reduce((sum, asset) => sum + Number(asset.current_value || 0), 0);
-  const totalProfitLoss = portfolios.reduce((sum, asset) => sum + Number(asset.profit_loss || 0), 0);
+  const handleRemoveInvestment = async (asset) => {
+    try {
+      await portfolioService.removeInvestment(asset.symbol);
+    } catch {
+      // fallback to local state when the API is unavailable
+    }
+
+    dispatch(removeInvestment(asset.id));
+    toast.success(`${asset.assetName} removed from portfolio`);
+  };
+
+  const handleToggleWatchlist = (asset) => {
+    dispatch(toggleWatchlist(asset.id));
+    toast.success(watchlist.includes(asset.id) ? `${asset.assetName} removed from watchlist` : `${asset.assetName} added to watchlist`);
+  };
+  const allocationData = summary.assetAllocation.map((entry, index) => ({
+    name: entry.name,
+    value: Math.round(entry.current),
+    fill: ['#6366F1', '#8B5CF6', '#06B6D4', '#22C55E', '#F59E0B'][index % 5],
+  }));
 
   return (
     <div className="content-area">
-      <div className="portfolio-hero">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
-          <div className="portfolio-subtle-card" style={{ marginBottom: 12 }}>
-            <X size={14} style={{ display: 'none' }} />
-            Portfolio control center
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 999, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.18)', color: '#A5B4FC', fontSize: 12, fontWeight: 700, marginBottom: 14 }}>
+            <Sparkles size={12} /> Premium portfolio control center
           </div>
           <h1 className="section-title">Portfolio Management</h1>
-          <p className="section-subtitle">Track, edit, and review your investments with a cleaner overview.</p>
+          <p className="section-subtitle">Browse your dummy holdings, inspect full asset detail, and use smart filters to find the best opportunities.</p>
         </div>
-        <Button onClick={() => handleOpenModal()}>
-          <Plus size={16} style={{ display: 'inline', marginRight: 8 }} />
-          Add Asset
-        </Button>
-      </div>
 
-      <div className="portfolio-summary-grid">
-        <div className="portfolio-summary-card">
-          <div className="portfolio-summary-label">Total Investment</div>
-          <div className="portfolio-summary-value">{formatCurrency(totalInvestment)}</div>
-        </div>
-        <div className="portfolio-summary-card">
-          <div className="portfolio-summary-label">Current Value</div>
-          <div className="portfolio-summary-value">{formatCurrency(totalCurrentValue)}</div>
-        </div>
-        <div className="portfolio-summary-card">
-          <div className="portfolio-summary-label">Profit / Loss</div>
-          <div className="portfolio-summary-value" style={{ color: totalProfitLoss >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            {totalProfitLoss >= 0 ? '+' : ''}{formatCurrency(totalProfitLoss)}
-          </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Button variant="secondary" onClick={() => setQuickAddOpen(true)}>
+            <Plus size={14} /> Quick Add
+          </Button>
+          <Button onClick={() => setSelectedAsset(trendingAssets[0])}>
+            <TrendingUp size={14} /> Highlight Asset
+          </Button>
         </div>
       </div>
 
-      <GlassCard hover={false} style={{ padding: 24, marginBottom: 24 }}>
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 250px', position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              placeholder="Search assets..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input-field"
-              style={{ paddingLeft: 40 }}
-            />
-          </div>
-          <div style={{ flex: '0 1 200px', position: 'relative' }}>
-            <Filter size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="select-field"
-              style={{ paddingLeft: 40 }}
-            >
-              <option value="">All Types</option>
-              <option value="stocks">Stocks</option>
-              <option value="crypto">Crypto</option>
-              <option value="gold">Gold</option>
-              <option value="bonds">Bonds</option>
-              <option value="mutual_funds">Mutual Funds</option>
-            </select>
-          </div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <SummaryCard label="Total Investment" value={formatCurrency(summary.totalInvestment)} tone="primary" />
+        <SummaryCard label="Current Value" value={formatCurrency(summary.totalCurrentValue)} tone="success" />
+        <SummaryCard label="Profit / Loss" value={<ProfitLoss value={summary.totalProfitLoss} />} tone={summary.totalProfitLoss >= 0 ? 'success' : 'danger'} />
+        <SummaryCard label="Risk Score" value={`${summary.riskScore}/100`} tone="warning" />
+      </div>
 
-        {/* Table */}
-        <div style={{ overflowX: 'auto' }}>
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center' }}>
-              <div className="spinner" style={{ margin: '0 auto', width: 32, height: 32 }} />
+      <div className="portfolio-page-grid">
+        <div style={{ display: 'grid', gap: 20 }}>
+          <GlassCard hover={false} style={{ padding: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 16 }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search asset name or symbol"
+                  className="input-field"
+                  style={{ paddingLeft: 40 }}
+                />
+              </div>
+
+              <SelectBlock label="Asset Class" icon={<Filter size={14} />} value={assetClass} onChange={setAssetClass} options={assetClassOptions} />
+              <SelectBlock label="Performance" icon={<Activity size={14} />} value={performance} onChange={setPerformance} options={performanceOptions} />
             </div>
-          ) : portfolios.length === 0 ? (
-            <EmptyState 
-              icon={AlertCircle} 
-              title="No assets found" 
-              description="You haven't added any investments matching your criteria." 
-              action={<Button onClick={() => handleOpenModal()}>Add Your First Asset</Button>}
-            />
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Asset</th>
-                  <th>Type</th>
-                  <th>Qty / Price</th>
-                  <th>Current Val</th>
-                  <th>P/L</th>
-                  <th>Risk</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {portfolios.map((asset) => {
-                    const isProfit = asset.profit_loss >= 0;
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
+              <SelectBlock label="Risk Level" icon={<Shield size={14} />} value={riskLevel} onChange={setRiskLevel} options={riskOptions} />
+              <SelectBlock label="Sort By" icon={<ArrowUpDown size={14} />} value={sortBy} onChange={setSortBy} options={sortOptions} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>All Holdings</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filteredAssets.length} assets matching the active filters</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <RiskBadge level={summary.riskLevel} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Overall ROI {formatPercent(summary.roi)}</span>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard hover={false} style={{ padding: 0, overflowX: 'auto' }}>
+            {filteredAssets.length === 0 ? (
+              <div style={{ padding: 24 }}>
+                <EmptyState
+                  icon={X}
+                  title="No holdings found"
+                  description="Try changing the filters or search a different asset symbol."
+                  action={<Button onClick={() => { setSearch(''); setAssetClass('all'); setPerformance('all'); setRiskLevel('all'); setSortBy('highest_profit'); }}>Reset Filters</Button>}
+                />
+              </div>
+            ) : (
+              <table className="data-table" style={{ minWidth: 1180 }}>
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th>Qty</th>
+                    <th>Buy Price</th>
+                    <th>Current Price</th>
+                    <th>Invested</th>
+                    <th>Current Value</th>
+                    <th>ROI %</th>
+                    <th>Risk</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAssets.map((asset, index) => {
+                    const isHeld = asset.quantity > 0;
                     return (
-                      <motion.tr 
+                      <motion.tr
                         key={asset.id}
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        transition={{ duration: 0.2 }}
+                        transition={{ delay: index * 0.02 }}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => setSelectedAsset(asset)}
                       >
                         <td>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{asset.asset_name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{asset.ticker_symbol || 'N/A'}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <AssetAvatar asset={asset} size={40} />
+                            <div>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{asset.assetName}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{asset.sector}</div>
+                            </div>
+                          </div>
                         </td>
-                        <td><AssetTypeBadge type={asset.asset_type} /></td>
+                        <td>{asset.symbol}</td>
+                        <td><AssetTypeBadge type={asset.assetType} /></td>
+                        <td>{formatNumber(asset.quantity)}</td>
+                        <td>{asset.buyPrice > 0 ? formatCurrency(asset.buyPrice) : '—'}</td>
+                        <td>{formatCurrency(asset.currentPrice)}</td>
+                        <td>{formatCurrency(asset.investedAmount)}</td>
+                        <td>{formatCurrency(asset.currentValue)}</td>
                         <td>
-                          <div>{asset.quantity} units</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            Avg: {formatCurrency(asset.buy_price)}
-                          </div>
+                          <span style={{ color: asset.roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>
+                            {formatPercent(asset.roi)}
+                          </span>
                         </td>
+                        <td><RiskBadge level={asset.riskLevel} /></td>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{formatCurrency(asset.current_value)}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            @ {formatCurrency(asset.current_price)}
-                          </div>
+                          <span style={{
+                            padding: '6px 10px',
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: isHeld ? 'rgba(34,197,94,0.14)' : 'rgba(245,158,11,0.14)',
+                            color: isHeld ? '#86EFAC' : '#FBBF24',
+                          }}>
+                            {isHeld ? 'Held' : 'Available'}
+                          </span>
                         </td>
-                        <td>
-                          <div style={{ fontWeight: 600, color: isProfit ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                            {isProfit ? '+' : ''}{formatCurrency(asset.profit_loss)}
-                          </div>
-                          <div style={{ fontSize: 12, color: isProfit ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                            {isProfit ? '+' : ''}{asset.roi.toFixed(2)}%
-                          </div>
-                        </td>
-                        <td><RiskBadge level={asset.risk_level} /></td>
                         <td style={{ textAlign: 'right' }}>
-                          <button 
-                            onClick={() => handleOpenModal(asset)}
-                            style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--color-primary)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer', marginRight: 8 }}
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button 
-                            onClick={() => handleOpenDeleteModal(asset)}
-                            style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)', border: 'none', padding: 8, borderRadius: 8, cursor: 'pointer' }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <Button size="sm" onClick={(event) => { event.stopPropagation(); setSelectedAsset(asset); }}>View</Button>
+                            <Button variant="secondary" size="sm" onClick={(event) => { event.stopPropagation(); handleAddInvestment(asset); }}>Add</Button>
+                            <Button variant="danger" size="sm" onClick={(event) => { event.stopPropagation(); handleRemoveInvestment(asset); }} disabled={!isHeld}>Remove</Button>
+                            <button
+                              onClick={(event) => { event.stopPropagation(); handleToggleWatchlist(asset); }}
+                              style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 12,
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                background: watchlist.includes(asset.id) ? 'rgba(245,158,11,0.14)' : 'rgba(255,255,255,0.03)',
+                                color: watchlist.includes(asset.id) ? '#FBBF24' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <Star size={14} fill={watchlist.includes(asset.id) ? 'currentColor' : 'none'} />
+                            </button>
+                          </div>
                         </td>
                       </motion.tr>
                     );
                   })}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          )}
+                </tbody>
+              </table>
+            )}
+          </GlassCard>
         </div>
-      </GlassCard>
 
-      {/* Add/Edit Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentAsset ? "Edit Asset" : "Add New Asset"}>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <InputField label="Asset Name *" name="asset_name" value={form.asset_name} onChange={handleFormChange} required placeholder="e.g. Apple Inc." error={errors.asset_name?.[0]} />
-            <InputField label="Ticker Symbol" name="ticker_symbol" value={form.ticker_symbol} onChange={handleFormChange} placeholder="e.g. AAPL" error={errors.ticker_symbol?.[0]} />
+        <div className="portfolio-side-grid">
+          <GlassCard hover={false} style={{ padding: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700 }}>Portfolio Summary</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current allocation and health</p>
+              </div>
+              <Clock3 size={16} color="#6366F1" />
+            </div>
+
+            <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+              <MiniMetric label="Holdings" value={`${assets.length}`} />
+              <MiniMetric label="Watchlist" value={`${watchlist.length}`} />
+              <MiniMetric label="Notifications" value={`${notifications.filter((notification) => notification.unread).length} unread`} />
+            </div>
+
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={54} outerRadius={84} dataKey="value" strokeWidth={0}>
+                  {allocationData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                </Pie>
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </GlassCard>
+
+          <GlassCard hover={false} style={{ padding: 22 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Risk Analysis</h3>
+            <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+              <MiniMetric label="Overall Risk" value={`${summary.riskLevel.toUpperCase()} · ${summary.riskScore}/100`} />
+              <MiniMetric label="Crypto Exposure" value={`${summary.cryptoWeight.toFixed(1)}%`} />
+              <MiniMetric label="High Risk Share" value={`${summary.highRiskShare.toFixed(1)}%`} />
+            </div>
+
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={summary.riskDistribution.map((item) => ({ name: item.name.toUpperCase(), value: item.value }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="name" tick={{ fill: '#64748B', fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fill: '#64748B', fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="value" radius={[10, 10, 0, 0]} fill="#6366F1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </GlassCard>
+
+          <GlassCard hover={false} style={{ padding: 22 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Recent Transactions</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              {transactions.slice(0, 6).map((transaction) => {
+                const isBuy = transaction.action === 'buy';
+                const pnl = Number(transaction.profit_loss || (isBuy ? transaction.amount * 0.08 : -transaction.amount * 0.04));
+                return (
+                  <motion.button
+                    key={transaction.id}
+                    whileHover={{ y: -3 }}
+                    onClick={() => setSelectedTransaction(transaction)}
+                    style={{
+                      textAlign: 'left',
+                      padding: 14,
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      background: 'rgba(255,255,255,0.03)',
+                      cursor: 'pointer',
+                      color: 'inherit',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{transaction.asset_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{transaction.symbol}</div>
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: isBuy ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                        {isBuy ? 'Buy' : 'Sell'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>Qty</span><span>{transaction.quantity || 1}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>P/L</span><span style={{ color: pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>{pnl >= 0 ? '+' : ''}{formatCurrency(pnl)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>Date</span><span>{formatDate(transaction.created_at)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>Status</span><span>Executed</span></div>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          <GlassCard hover={false} style={{ padding: 22 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Smart Advice</h3>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {smartAdvice.slice(0, 3).map((advice) => (
+                <div key={advice.id} style={{ padding: 14, borderRadius: 16, background: advice.risk_level === 'high' ? 'rgba(239,68,68,0.08)' : advice.risk_level === 'low' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${advice.risk_level === 'high' ? 'rgba(239,68,68,0.2)' : advice.risk_level === 'low' ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <RiskBadge level={advice.risk_level} />
+                    <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-secondary)' }}>{advice.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard hover={false} className="portfolio-actions-card" style={{ padding: 22 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Quick Actions</h3>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <Button onClick={() => setQuickAddOpen(true)}>
+                <Plus size={14} /> Quick Add Investment
+              </Button>
+              <Button variant="secondary" onClick={() => setSelectedAsset(trendingAssets[0])}>
+                <Target size={14} /> Open Top Asset
+              </Button>
+            </div>
+          </GlassCard>
+        </div>
+      </div>
+
+      <AssetDetailModal
+        asset={selectedAsset}
+        isOpen={!!selectedAsset}
+        onClose={() => setSelectedAsset(null)}
+        onAddToPortfolio={handleAddInvestment}
+        onToggleWatchlist={handleToggleWatchlist}
+        isWatchlisted={!!selectedAsset && watchlist.includes(selectedAsset.id)}
+      />
+
+      <Modal
+        isOpen={!!selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+        title="Transaction Details"
+        maxWidth={680}
+      >
+        {selectedTransaction && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+              <InfoTile label="Transaction ID" value={selectedTransaction.id} />
+              <InfoTile label="Asset" value={selectedTransaction.asset_name} />
+              <InfoTile label="Quantity" value={selectedTransaction.quantity || 1} />
+              <InfoTile label="Type" value={(selectedTransaction.action || 'buy').toUpperCase()} />
+              <InfoTile label="Buy Price" value={selectedTransaction.price ? formatCurrency(selectedTransaction.price) : formatCurrency(selectedTransaction.amount)} />
+              <InfoTile label="Current Price" value={formatCurrency(selectedTransaction.current_price || selectedTransaction.amount)} />
+              <InfoTile label="ROI" value={formatPercent(selectedTransaction.roi || 0)} />
+              <InfoTile label="Timestamp" value={formatDate(selectedTransaction.created_at)} />
+            </div>
+            <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Notes</div>
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                {selectedTransaction.notes || 'This transaction was synced from the portfolio activity feed and can be used to review buy/sell performance.'}
+              </div>
+            </div>
           </div>
-
-          <SelectField label="Asset Type *" name="asset_type" value={form.asset_type} onChange={handleFormChange} required error={errors.asset_type?.[0]}>
-            <option value="stocks">Stocks</option>
-            <option value="crypto">Cryptocurrency</option>
-            <option value="gold">Gold</option>
-            <option value="bonds">Bonds</option>
-            <option value="mutual_funds">Mutual Funds</option>
-          </SelectField>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-            <InputField label="Quantity *" type="number" step="any" name="quantity" value={form.quantity} onChange={handleFormChange} required placeholder="0.00" error={errors.quantity?.[0]} />
-            <InputField label="Buy Price (₹) *" type="number" step="any" name="buy_price" value={form.buy_price} onChange={handleFormChange} required placeholder="0.00" error={errors.buy_price?.[0]} />
-            <InputField label="Current Price (₹) *" type="number" step="any" name="current_price" value={form.current_price} onChange={handleFormChange} required placeholder="0.00" error={errors.current_price?.[0]} />
-          </div>
-
-          <InputField label="Purchase Date *" type="date" name="purchase_date" value={form.purchase_date} onChange={handleFormChange} required error={errors.purchase_date?.[0]} />
-
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes</label>
-            <textarea 
-              name="notes" 
-              value={form.notes} 
-              onChange={handleFormChange} 
-              className="input-field" 
-              style={{ minHeight: 80, resize: 'vertical' }} 
-              placeholder="Optional notes..."
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit" loading={formLoading}>{currentAsset ? "Update Asset" : "Add Asset"}</Button>
-          </div>
-        </form>
+        )}
       </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Sell / Remove Asset" maxWidth={400}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-            <Trash2 size={28} color="#EF4444" />
-          </div>
-          <p style={{ fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>
-            Are you sure you want to remove <strong>{currentAsset?.asset_name}</strong>?
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            This action will record a sell transaction and cannot be undone.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <Button variant="secondary" onClick={() => setIsDeleteModalOpen(false)} style={{ flex: 1 }}>Cancel</Button>
-          <Button variant="danger" onClick={handleDelete} loading={formLoading} style={{ flex: 1 }}>Remove</Button>
-        </div>
-      </Modal>
+      <QuickAddModal
+        isOpen={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        assets={trendingAssets}
+        onAddInvestment={handleAddInvestment}
+        onOpenAsset={(asset) => setSelectedAsset(asset)}
+      />
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, tone = 'primary' }) {
+  const colors = {
+    primary: 'rgba(99,102,241,0.08)',
+    success: 'rgba(34,197,94,0.08)',
+    danger: 'rgba(239,68,68,0.08)',
+    warning: 'rgba(245,158,11,0.08)',
+  };
+
+  return (
+    <GlassCard hover={false} style={{ padding: 18, background: colors[tone] }}>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>{value}</div>
+    </GlassCard>
+  );
+}
+
+function MiniMetric({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+}
+
+function SelectBlock({ label, icon, value, onChange, options }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+        {icon}
+        {label}
+      </div>
+      <select
+        className="select-field"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div style={{ padding: 14, borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }
