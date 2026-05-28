@@ -232,7 +232,7 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = 520 }) {
             <button
               onClick={onClose}
               style={{
-                background: 'rgba(255,255,255,0.08)',
+                background: 'var(--glass)',
                 border: '1px solid var(--border)',
                 borderRadius: 8,
                 width: 32,

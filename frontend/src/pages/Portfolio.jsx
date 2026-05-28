@@ -131,17 +131,42 @@ export default function Portfolio() {
     }
   };
 
+  const totalInvestment = portfolios.reduce((sum, asset) => sum + Number(asset.buy_price || 0) * Number(asset.quantity || 0), 0);
+  const totalCurrentValue = portfolios.reduce((sum, asset) => sum + Number(asset.current_value || 0), 0);
+  const totalProfitLoss = portfolios.reduce((sum, asset) => sum + Number(asset.profit_loss || 0), 0);
+
   return (
     <div className="content-area">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+      <div className="portfolio-hero">
         <div>
+          <div className="portfolio-subtle-card" style={{ marginBottom: 12 }}>
+            <X size={14} style={{ display: 'none' }} />
+            Portfolio control center
+          </div>
           <h1 className="section-title">Portfolio Management</h1>
-          <p className="section-subtitle">Track and manage your investments</p>
+          <p className="section-subtitle">Track, edit, and review your investments with a cleaner overview.</p>
         </div>
         <Button onClick={() => handleOpenModal()}>
           <Plus size={16} style={{ display: 'inline', marginRight: 8 }} />
           Add Asset
         </Button>
+      </div>
+
+      <div className="portfolio-summary-grid">
+        <div className="portfolio-summary-card">
+          <div className="portfolio-summary-label">Total Investment</div>
+          <div className="portfolio-summary-value">{formatCurrency(totalInvestment)}</div>
+        </div>
+        <div className="portfolio-summary-card">
+          <div className="portfolio-summary-label">Current Value</div>
+          <div className="portfolio-summary-value">{formatCurrency(totalCurrentValue)}</div>
+        </div>
+        <div className="portfolio-summary-card">
+          <div className="portfolio-summary-label">Profit / Loss</div>
+          <div className="portfolio-summary-value" style={{ color: totalProfitLoss >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+            {totalProfitLoss >= 0 ? '+' : ''}{formatCurrency(totalProfitLoss)}
+          </div>
+        </div>
       </div>
 
       <GlassCard hover={false} style={{ padding: 24, marginBottom: 24 }}>

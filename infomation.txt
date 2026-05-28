@@ -1,0 +1,353 @@
+SMART PORTFOLIO MANAGEMENT SYSTEM
+Language Switching (English + Hindi + Punjabi) - Full Working Plan
+
+Goal
+- Jab user language change kare (English, Hindi, Punjabi), to poori website ki language change ho.
+- Language preference user account ke saath save ho (backend PHP/Laravel).
+- Login ke baad bhi selected language same rahe.
+
+Why this is needed
+- Abhi language partial hai (kuch pages hardcoded English me hain).
+- Current i18n setup me Spanish (es) hai, Punjabi (pa) nahi hai.
+- Sirf frontend switch se preference tab/session tak limited reh sakti hai; backend save karne se persistent experience milta hai.
+
+Current status in this project
+- Frontend i18n file exists: frontend/src/i18n.js
+- Languages currently: en, hi, es
+- Backend API exists (Laravel): backend/routes/api.php
+- Auth endpoints already available; language preference endpoint add karna easy hai.
+
+==================================================
+1) FRONTEND CHANGES (React + i18next)
+==================================================
+
+A. Replace Spanish with Punjabi in i18n resources
+File: frontend/src/i18n.js
+- es block remove karke pa block add karo.
+- Minimum same keys maintain karo:
+  - landing.*
+  - auth.*
+  - footer.*
+- IMPORTANT: key names same rakho, sirf values translate karo.
+
+Suggested language codes
+- English: en
+- Hindi: hi
+- Punjabi: pa
+
+B. Keep fallback and detection safe
+In i18n init:
+- fallbackLng: 'en'
+- supportedLngs: ['en', 'hi', 'pa']
+- detection order (recommended): localStorage -> navigator
+- cache in localStorage
+
+C. Update language selector UI
+File example: frontend/src/components/PublicNavbar.jsx
+- Language options exactly:
+  - English (en)
+  - Hindi (hi)
+  - Punjabi (pa)
+- Remove Spanish option.
+
+D. Make full app translatable (IMPORTANT)
+Issue:
+- Bahut pages me text hardcoded hai (Dashboard, Portfolio, Reports, Profile, etc).
+Fix:
+- Har user-visible string ko t('...') se replace karo.
+- New translation namespaces add karo:
+  - common
+  - dashboard
+  - portfolio
+  - reports
+  - profile
+  - notifications
+  - admin
+
+Example pattern
+- Before: <h1>Reports</h1>
+- After:  <h1>{t('reports.title')}</h1>
+
+E. Sync language after login
+Flow:
+- Login response me user.preferred_language ho to i18n.changeLanguage(user.preferred_language)
+- Agar missing ho to localStorage ya fallback use karo.
+
+==================================================
+2) BACKEND CHANGES (PHP Laravel)
+==================================================
+
+A. Add preferred language column
+Table: users
+Column: preferred_language
+Type: string(5), default 'en'
+
+Migration example
+- php artisan make:migration add_preferred_language_to_users_table --table=users
+
+Inside migration up():
+- $table->string('preferred_language', 5)->default('en')->after('risk_preference');
+
+B. Update User model fillable
+File: backend/app/Models/User.php
+- preferred_language ko $fillable me add karo.
+
+C. Validate and save language in profile update
+File: backend/app/Http/Controllers/Api/AuthController.php
+- updateProfile request validation me add:
+  preferred_language => nullable|in:en,hi,pa
+- If present, save in user record.
+
+D. Add dedicated language endpoint (recommended)
+Route (auth protected):
+- PUT /api/auth/language
+
+Route file
+- backend/routes/api.php
+Add inside auth:sanctum group:
+- Route::put('/auth/language', [AuthController::class, 'updateLanguage']);
+
+Controller method
+- Validate language in: en,hi,pa
+- Save to authenticated user
+- Return updated user + success message
+
+E. Return preferred_language in /auth/me
+- Ensure AuthController@me response me preferred_language included ho.
+- Frontend app boot pe /auth/me call karke i18n sync kare.
+
+==================================================
+3) FRONTEND <-> BACKEND INTEGRATION FLOW
+==================================================
+
+When user changes language from dropdown:
+1. i18n.changeLanguage(code)
+2. localStorage.setItem('i18nextLng', code)
+3. If logged in, call PUT /api/auth/language with { preferred_language: code }
+
+On app load:
+1. If authenticated, fetch /api/auth/me
+2. If preferred_language exists, i18n.changeLanguage(preferred_language)
+3. Else fallback to localStorage/detection
+
+Why this flow
+- Guest users ke liye quick local switch
+- Logged-in users ke liye permanent account-level preference
+- Device change par bhi language same rahegi
+
+==================================================
+4) PUNJABI CONTENT GUIDELINE
+==================================================
+
+Script choice
+- Punjabi Gurmukhi use karo (official in India) for UI consistency.
+
+Examples
+- Home -> ਘਰ
+- About Us -> ਸਾਡੇ ਬਾਰੇ
+- Contact Us -> ਸੰਪਰਕ ਕਰੋ
+- Start for free -> ਮੁਫ਼ਤ ਸ਼ੁਰੂ ਕਰੋ
+- Reports -> ਰਿਪੋਰਟਾਂ
+
+Tip
+- Short labels rakho to avoid UI overflow in buttons/sidebar.
+
+==================================================
+5) TESTING CHECKLIST (FULLY WORKING VERIFICATION)
+==================================================
+
+A. Guest user
+- Landing page pe EN/HI/PA switch karo
+- Poora public UI translate hona chahiye
+- Refresh ke baad selected language same rehni chahiye
+
+B. Logged-in user
+- Dashboard pe language switch karo
+- Sidebar, navbar, cards, forms, buttons translated hon
+- Logout + Login ke baad same selected language loaded ho
+
+C. API verification
+- PUT /api/auth/language success (200)
+- DB users.preferred_language updates correctly
+
+D. Edge cases
+- Invalid code (xx) reject hona chahiye
+- Missing translation keys fallback en me aana chahiye
+
+==================================================
+6) COMMON MISTAKES TO AVOID
+==================================================
+
+- Sirf navbar translate karke stop mat karo; pages hardcoded reh jayenge.
+- Spanish option remove bina Punjabi add karne se UX confusion hota hai.
+- Backend me column add kiye bina preference persist nahi hogi.
+- Translation key mismatch (typo) se blank labels aa sakte hain.
+
+==================================================
+7) WHAT WE ARE DOING AND WHY (Simple explanation)
+==================================================
+
+Hum 3 cheezein kar rahe hain:
+1. Frontend i18n ko 3 required languages (English, Hindi, Punjabi) par standardize kar rahe hain.
+2. Sare visible texts ko translation keys par move kar rahe hain, taaki full website language switch ho.
+3. PHP/Laravel backend me preferred_language save kar rahe hain, taaki language permanently user account se bind ho.
+
+Isse result milega:
+- Language change instant bhi hoga aur persistent bhi.
+- User ko har login/device pe same language experience milega.
+- App professional aur production-ready multilingual setup ban jayega.
+
+==================================================
+8) OPTIONAL FUTURE IMPROVEMENTS
+==================================================
+
+- Admin panel me language analytics (kitne users kaunsi language use kar rahe hain).
+- Missing-translation detector in dev mode.
+- Separate JSON files per language and namespace for maintainability.
+- Backend-driven language packs (dynamic CMS translations).
+
+==================================================
+9) USER & ADMIN CAPABILITIES (Per-Page)
+==================================================
+
+Landing (Home) Page
+- User: साइट देख सकता/सकती है, मुख्य फीचर्स पढ़ना, ‘Start for free’ / CTA पर जाना, भाषा बदलना (EN/HI/PA), संपर्क फ़ॉर्म खोलना.
+- Admin: लैंडिंग कंटेन्ट (टेक्स्ट/CTA/बैनर) संपादित कर सकता/सकती है (यदि CMS या एडमिन पृष्ठ है)।
+
+Authentication (Login / Register / Forgot Password)
+- User: अकाउंट बनाना, लॉगिन/लॉगआउट, पासवर्ड रीसेट, ईमेल सत्यापन flow पूरा करना।
+- Admin: यूजर अकाउंट्स मॉनिटर करना, ज़रूरी होने पर अकाउंट लॉक/डिलीट करना (यदि ऐडमिन टूल उपलब्ध)।
+
+Public Navbar / Header
+- User: भाषा चुनना, लॉगिन/रजिस्टर नेविगेट करना, मोबाइल मेन्यू एक्सेस करना।
+- Admin: नेवबार के लिंक/ऑप्शन्स कॉन्फ़िगर कर सकता/सकती है (साइट नेविगेशन सेटिंग्स)।
+
+Dashboard (Authenticated)
+- User: अपना डैशबोर्ड देखना (कुल पोर्टफोलियो वैल्यू, हाल के ट्रांजैक्शन्स, नोटिफिकेशन), चार्ट/ग्राफ़ इंटरैक्ट करना, रिपोर्ट्स एक्सेस करना, नोटिफिकेशन पढ़ना/मार्क करना।
+- Admin: यूज़र्स का डैशबोर्ड ओवरव्यू (कुल एक्टिव यूज़र्स, सिस्टम हेल्थ) देख सकता/सकती है; प्लेटफ़ॉर्म-लेवल मैट्रिक्स ऐनैलाइज़ कर सकता/सकती है।
+
+Portfolio Management
+- User: नया पोर्टफोलियो बनाना, मौजूद पोर्टफोलियो एडिट/डिलीट करना, एसेट्स जोड़ना/निकालना, पोर्टफोलियो का सारांश और पर्फॉर्मेंस देखना, पोर्टफोलियो एक्सपोर्ट (PDF/CSV) डाउनलोड करना।
+- Admin: सभी यूज़र्स के पोर्टफोलियो देखना, स्पैम/दुरुपयोग वाले पोर्टफोलियो हटा/ब्लॉक करना, डेटाबेस बैकअप/एक्सपोर्ट स्थानिक सेटिंग्स।
+
+Transactions
+- User: ट्रांजैक्शन जोड़ना/एडिट/डिलीट (यदि ऐप अनुमति दे), ट्रांजैक्शन हिस्ट्री फ़िल्टर/सर्च करना, एक्सपोर्ट करना (CSV/XLSX)।
+- Admin: सभी यूज़र्स की ट्रांजैक्शन्स मॉनिटर करना, संदेहास्पद ट्रांजैक्शन मार्क करना, बड़े-स्केल डेटा एक्सपोर्ट करना।
+
+Reports / Exports
+- User: तैयार रिपोर्ट्स (Portfolio PDF, Transactions Excel) जेनरेट/डाउनलोड करना, रिपोर्ट जनरेशन सेटिंग्स चुनना (डेट-रेंज, फॉर्मैट)।
+- Admin: रिपोर्ट टेम्पलेट्स बनाना/अपडेट करना, बैच-रिपोर्ट जनरेशन शेड्यूल करना, रिपोर्ट ऐक्सेस लॉग देखना।
+
+Profile / Settings
+- User: प्रोफ़ाइल जानकारी एडिट करना (नाम, ईमेल, पता), पासवर्ड बदलना, risk_preference और preferred_language सेट करना, नोटिफिकेशन प्रेफरेंसेज़ चुनना।
+- Admin: यूज़र रोल्स/पर्मिशन्स बदलना, स्पेशल-एक्सेस देना, उपयोगकर्ता-समूह मैनेज करना।
+
+Notifications
+- User: नोटिफिकेशन पढ़ना/मार्क-एज़-रीड/क्लियर करना, नोटिफिकेशन सेटिंग्स संशोधित करना (ईमेल/इन-ऐप)।
+- Admin: सिस्टम नोटिफिकेशन भेजना (अलर्ट्स), बड़े पैमाने पर संदेश ब्रॉडकास्ट करना, नोटिफिकेशन टेम्पलेट्स एडिट करना।
+
+Advice / Help Center
+- User: सलाह/रिपोर्ट्स पढ़ना, सलाह के लिए फ़ॉर्म/क्वेरी सबमिट करना, सुझाव भेजना।
+- Admin: एडवाइज़ कंटेंट मैनेज करना, यूज़र से आने वाले संदेश/सुझावों का जवाब देना, FAQs अपडेट करना।
+
+Contact / Support Messages
+- User: संपर्क फ़ॉर्म भरना, संदेश भेजना, सपोर्ट टिकट बनाना (यदि लागू)।
+- Admin: संपर्क संदेश पढ़ना/रिस्पॉन्ड करना, सपोर्ट टिकट ट्रैक करना, आवश्यक कार्रवाई लेना।
+
+Admin Dashboard / Users / Roles
+- User: (नियमित यूज़र) — इस पेज तक सामान्यत: पहुँच नहीं।
+- Admin: सभी यूज़र्स सूची देखना, सर्च/फ़िल्टर, यूज़र डिटेल्स संपादित करना, रोल्स और परमिशन्स सेट करना, अकाउंट्स एक्टिव/डिएक्टिवेट करना।
+
+Admin Analytics / System
+- User: (नियमित यूज़र) — पढ़ने की अनुमति नहीं।
+- Admin: प्लेटफ़ॉर्म एनालिटिक्स देखना (यूज़र एक्टिविटी, सबसे ज़्यादा यूज़ होने वाले फीचर), लैंग्वेज योज़ना रिपोर्ट्स, सिस्टम हेल्थ मेट्रिक्स।
+
+Messages / Notifications Center (Admin)
+- User: निजी संदेश केवल अपने द्वारा देखे जा सकते हैं।
+- Admin: यूज़र संदेश/कम्यूनिकेशन मॉडरेटर टूल, ब्रॉडकास्ट मैसेज भेजना, रिपोर्ट किया गया संदेश अंडरस्टूड/डिलीट करना।
+
+Settings / System Config
+- User: अपनी व्यक्तिगत सेटिंग्स बदलना (थीम, भाषा, नोटिफिकेशन)।
+- Admin: सिस्टम-लेवल सेटिंग्स बदलना (सिस्टम थीम, इंटीग्रेशन कीज़, SMTP सेटिंग्स), फीचर-टॉगल्स सेट करना।
+
+Reports API / Audit Logs
+- User: अपना एक्सपोर्ट लॉग/एक्टिविटी सीमित रूप से देख सकते हैं (यदि UI पर प्रदर्शित)।
+- Admin: पूर्ण ऑडिट-लॉग्स देखना, रिपोर्ट एक्सपोर्ट्स का ट्रेस, सिक्योरिटी इवेंट्स मॉनिटर करना।
+
+Notes on Permissions
+- Role-based access control (RBAC) implement करें: अलग-अलग रोल्स (user, admin, super-admin) बनाएं और हर API/रूट पर चेक लगाएं.
+- Sensitive ऑपरेशन्स पर audit logs और optional confirmation dialogs रखें (जैसे delete, bulk-export)।
+
+==================================================
+End of file.
+
+==================================================
+10) USER & ADMIN CAPABILITIES (Hinglish Short Guide)
+==================================================
+
+Navbar (Top/Header)
+- User: Navbar se aap Dark/Light mode toggle kar sakte ho, language change kar sakte ho (EN/HI/PA), login/register pe ja sakte ho, mobile menu open/close kar sakte ho, messages/notifications icon dekh sakte ho.
+- Admin: Navbar links configure kar sakta/ sakti hai (agar CMS ya settings UI diya ho), important admin shortcuts add kar sakta/ sakti hai.
+
+Landing (Home)
+- User: Site ka overview dekhna, features padhna, "Start for free" ya CTA click karna, language switch karna, contact form open karna.
+- Admin: Landing text/banner/CTA update kar sakta/ sakti hai (agar admin panel available ho).
+
+Auth (Login / Register / Forgot Password)
+- User: Account create karna, login/logout, password reset flow use karna, email verify karna.
+- Admin: Users ko monitor/lock/delete kar sakta/ sakti hai (agar admin tools hain).
+
+Dashboard (After Login)
+- User: Portfolio summary dekhna, recent transactions, charts explore karna, notifications check karna, reports access karna.
+- Admin: System-wide overview dekh sakta/ sakti hai — active users, system metrics, important alerts.
+
+Portfolio Page
+- User: New portfolio create, existing edit/delete, assets add/remove, performance dekho, export PDF/CSV.
+- Admin: Users' portfolios review/flag/delete, bulk actions perform kar sakta/ sakti hai.
+
+Transactions
+- User: Transaction add/edit/delete (allowed ho to), history filter/search, export CSV/XLSX.
+- Admin: All transactions monitor karna, suspicious mark karna, bulk export.
+
+Reports / Exports
+- User: Pre-built reports generate/download karna (portfolio PDF, transactions Excel), date-range choose karna.
+- Admin: Report templates edit/define karna, scheduled reports setup karna, access logs dekhna.
+
+Profile / Settings
+- User: Naam/email edit, password change, risk preference set karna, preferred language set karna, notification preferences change karna.
+- Admin: User roles/permissions change karna, special access dena, user groups manage karna.
+
+Notifications / Messages
+- User: Notifications read/mark-as-read/clear kar sakte ho, in-app/email preferences set kar sakte ho.
+- Admin: Global notifications send kar sakta/ sakti hai, broadcast messages, message templates edit kar sakta/ sakti hai.
+
+Advice / Help
+- User: Advice articles padh sakte ho, advice form submit kar sakte ho, feedback bhej sakte ho.
+- Admin: Advice content manage karna, user messages reply karna, FAQs update karna.
+
+Contact / Support
+- User: Contact form bhar kar support message bhejna, support ticket create karna (agar system ho).
+- Admin: Contact messages read/respond karna, tickets manage karna.
+
+Admin Dashboard / Users Management
+- User: Generally access nahi milega.
+- Admin: User list dekhna, filter/search, edit/delete users, assign roles/permissions, activate/deactivate accounts.
+
+Analytics / System
+- User: Limited view (agar UI dikhata ho) — apne basic stats dekh sakte ho.
+- Admin: Deep analytics dekhega — user activity, language usage, feature usage, system health.
+
+Settings / System Config
+- User: Apni personal settings change (theme, language, notifications).
+- Admin: System settings change karna (email/SMS integrations, feature toggles, global defaults).
+
+Security & Permissions
+- Note: Important actions (delete, bulk-export, role-change) ke liye confirmation and audit logs hone chahiye. RBAC implement hona chahiye (user, admin, super-admin).
+
+--------------------------------------------------
+Kuch quick examples (Hinglish):
+- "Navbar": Click karo language dropdown → English/Hindi/Punjabi choose karo.
+- "Profile": Profile pe jaake preferred language select karo → app turant change karega.
+- "Portfolio": Export pe click karo → PDF/CSV download hoga.
+
+End of Hinglish guide.

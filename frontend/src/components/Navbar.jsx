@@ -5,15 +5,57 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, Search, Menu, CheckCheck, Trash2, X } from 'lucide-react';
 import { notificationService } from '../services';
 import { formatDistanceToNow } from '../utils/format';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function Navbar({ onMobileMenuOpen }) {
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const notifRef = useRef(null);
+  const isLightMode = theme === 'light';
+
+  const navButtonStyle = {
+    background: isLightMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255,255,255,0.06)',
+    border: `1px solid ${isLightMode ? 'rgba(148, 163, 184, 0.28)' : 'var(--border)'}`,
+    borderRadius: 10,
+    width: 38,
+    height: 38,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    color: isLightMode ? 'var(--text-secondary)' : 'var(--text-secondary)',
+  };
+
+  const searchInputStyle = {
+    background: isLightMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255,255,255,0.05)',
+    border: `1px solid ${isLightMode ? 'rgba(148, 163, 184, 0.22)' : 'var(--border)'}`,
+    borderRadius: 10,
+    padding: '8px 12px 8px 36px',
+    color: 'var(--text-primary)',
+    fontSize: 13,
+    width: 240,
+    outline: 'none',
+    transition: 'all 0.2s',
+  };
+
+  const notifPanelStyle = {
+    position: 'absolute',
+    right: 0,
+    top: 'calc(100% + 8px)',
+    width: 360,
+    background: isLightMode ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 23, 42, 0.98)',
+    backdropFilter: 'blur(20px)',
+    border: `1px solid ${isLightMode ? 'rgba(148, 163, 184, 0.22)' : 'var(--border)'}`,
+    borderRadius: 16,
+    zIndex: 500,
+    boxShadow: isLightMode ? '0 18px 50px rgba(15, 23, 42, 0.12)' : '0 20px 60px rgba(0,0,0,0.5)',
+    overflow: 'hidden',
+  };
 
   useEffect(() => {
     fetchNotifications();
@@ -83,18 +125,7 @@ export default function Navbar({ onMobileMenuOpen }) {
           <button
             className="md:hidden"
             onClick={onMobileMenuOpen}
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              width: 38,
-              height: 38,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: 'var(--text-secondary)',
-            }}
+            style={navButtonStyle}
           >
             <Menu size={18} />
           </button>
@@ -107,17 +138,7 @@ export default function Navbar({ onMobileMenuOpen }) {
               placeholder="Search assets, reports..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '8px 12px 8px 36px',
-                color: 'var(--text-primary)',
-                fontSize: 13,
-                width: 240,
-                outline: 'none',
-                transition: 'all 0.2s',
-              }}
+              style={searchInputStyle}
               className="hidden md:block"
             />
           </div>
@@ -131,19 +152,7 @@ export default function Navbar({ onMobileMenuOpen }) {
               onClick={() => { setNotifOpen(!notifOpen); if (!notifOpen) fetchNotifications(); }}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                width: 38,
-                height: 38,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                position: 'relative',
-              }}
+              style={{ ...navButtonStyle, position: 'relative' }}
             >
               <Bell size={18} />
               {unreadCount > 0 && (
@@ -179,19 +188,7 @@ export default function Navbar({ onMobileMenuOpen }) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 'calc(100% + 8px)',
-                    width: 360,
-                    background: 'rgba(15, 23, 42, 0.98)',
-                    backdropFilter: 'blur(20px)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 16,
-                    zIndex: 500,
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-                    overflow: 'hidden',
-                  }}
+                  style={notifPanelStyle}
                 >
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -216,10 +213,10 @@ export default function Navbar({ onMobileMenuOpen }) {
                         <motion.div
                           key={notif.id}
                           onClick={() => !notif.is_read && handleMarkRead(notif.id)}
-                          whileHover={{ background: 'rgba(255,255,255,0.04)' }}
+                          whileHover={{ background: isLightMode ? 'rgba(99, 102, 241, 0.06)' : 'rgba(255,255,255,0.04)' }}
                           style={{
                             padding: '14px 20px',
-                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                            borderBottom: `1px solid ${isLightMode ? 'rgba(148, 163, 184, 0.12)' : 'rgba(255,255,255,0.04)'}`,
                             cursor: notif.is_read ? 'default' : 'pointer',
                             position: 'relative',
                           }}
@@ -273,7 +270,7 @@ export default function Navbar({ onMobileMenuOpen }) {
               height: 38,
               borderRadius: 10,
               background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-              border: '2px solid rgba(99, 102, 241, 0.3)',
+              border: isLightMode ? '2px solid rgba(99, 102, 241, 0.22)' : '2px solid rgba(99, 102, 241, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

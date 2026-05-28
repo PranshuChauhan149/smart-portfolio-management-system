@@ -13,6 +13,31 @@ export default function PublicNavbar() {
   const location = useLocation();
   const [langOpen, setLangOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isLightMode = theme === 'light';
+
+  const navbarStyles = {
+    position: 'sticky',
+    top: 0,
+    padding: '16px 20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 100,
+    background: isLightMode ? 'rgba(248, 250, 252, 0.88)' : 'rgba(2, 6, 23, 0.7)',
+    backdropFilter: 'blur(20px)',
+    borderBottom: isLightMode ? '1px solid rgba(148, 163, 184, 0.25)' : '1px solid var(--border)',
+    boxShadow: isLightMode ? '0 10px 30px rgba(15, 23, 42, 0.06)' : 'none',
+  };
+
+  const iconButtonStyles = {
+    background: isLightMode ? 'rgba(255, 255, 255, 0.85)' : 'none',
+    border: isLightMode ? '1px solid rgba(148, 163, 184, 0.25)' : 'none',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  };
 
   const changeLanguage = (lng) => {
     i18n.changeLanguage(lng);
@@ -33,7 +58,7 @@ export default function PublicNavbar() {
   }
 
   return (
-    <nav className="public-navbar" style={{ position: 'sticky', top: 0, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 100, background: 'rgba(2, 6, 23, 0.7)', backdropFilter: 'blur(20px)', borderBottom: '1px solid var(--border)' }}>
+    <nav className="public-navbar" style={navbarStyles}>
       {/* Left: Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
@@ -55,7 +80,7 @@ export default function PublicNavbar() {
               textDecoration: 'none', 
               fontWeight: location.pathname === link.path ? 600 : 500,
               transition: 'color 0.2s',
-              fontSize: 14
+              fontSize: 14,
             }}
           >
             {link.name}
@@ -69,21 +94,21 @@ export default function PublicNavbar() {
         <div style={{ position: 'relative' }}>
           <button 
             onClick={() => setLangOpen(!langOpen)}
-            style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+            style={iconButtonStyles}
           >
             <Globe size={18} /> <span style={{ fontSize: 13, textTransform: 'uppercase' }} className="lang-text">{i18n.language.substring(0, 2)}</span>
           </button>
           {langOpen && (
-            <div style={{ position: 'absolute', top: 30, right: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, zIndex: 50, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 120 }}>
-              <button onClick={() => changeLanguage('en')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 4, fontSize: 13 }}>English</button>
-              <button onClick={() => changeLanguage('hi')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 4, fontSize: 13 }}>हिंदी (Hindi)</button>
-              <button onClick={() => changeLanguage('es')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 4, fontSize: 13 }}>Español</button>
+            <div style={{ position: 'absolute', top: 40, right: 0, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 8, zIndex: 50, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 120, boxShadow: isLightMode ? '0 14px 40px rgba(15, 23, 42, 0.12)' : '0 14px 40px rgba(0, 0, 0, 0.35)' }}>
+              <button onClick={() => changeLanguage('en')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13 }}>English</button>
+              <button onClick={() => changeLanguage('hi')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13 }}>हिंदी (Hindi)</button>
+              <button onClick={() => changeLanguage('es')} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', padding: '6px 12px', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13 }}>Español</button>
             </div>
           )}
         </div>
 
         {/* Theme Toggle */}
-        <button onClick={toggleTheme} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', padding: 4 }}>
+        <button onClick={toggleTheme} style={iconButtonStyles}>
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
@@ -121,7 +146,7 @@ export default function PublicNavbar() {
         <button 
           className="mobile-menu-btn"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', padding: 4 }}
+          style={iconButtonStyles}
         >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -145,7 +170,7 @@ export default function PublicNavbar() {
               display: 'flex',
               flexDirection: 'column',
               gap: 16,
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              boxShadow: isLightMode ? '0 16px 40px rgba(15, 23, 42, 0.12)' : '0 10px 30px rgba(0,0,0,0.5)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

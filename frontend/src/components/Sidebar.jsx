@@ -10,6 +10,7 @@ import {
 import { logout } from '../store/authSlice';
 import { authService } from '../services';
 import toast from 'react-hot-toast';
+import { useTheme } from '../contexts/ThemeContext';
 
 const userNavItems = [
   { path: '/', label: 'Home Page', icon: Home },
@@ -35,8 +36,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
   const { user } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isLightMode = theme === 'light';
 
   const navItems = user?.role === 'admin' ? adminNavItems : userNavItems;
+  const sidebarSurface = isLightMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.95)';
+  const sidebarBorder = isLightMode ? 'rgba(148, 163, 184, 0.22)' : 'var(--border)';
+  const sidebarShadow = isLightMode ? '0 18px 50px rgba(15, 23, 42, 0.08)' : 'none';
 
   const handleLogout = async () => {
     try {
@@ -190,7 +196,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
           justifyContent: 'center',
           padding: '8px',
           borderRadius: 8,
-          background: 'rgba(255,255,255,0.05)',
+          background: isLightMode ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.05)',
           border: '1px solid var(--border)',
           color: 'var(--text-muted)',
           cursor: 'pointer',
@@ -217,6 +223,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
           top: 0,
           flexShrink: 0,
           overflow: 'hidden',
+          background: sidebarSurface,
+          borderRight: `1px solid ${sidebarBorder}`,
+          backdropFilter: 'blur(20px)',
+          boxShadow: sidebarShadow,
         }}
       >
         <SidebarContent />
@@ -252,6 +262,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 height: '100vh',
                 width: 260,
                 zIndex: 201,
+                background: sidebarSurface,
+                borderRight: `1px solid ${sidebarBorder}`,
+                backdropFilter: 'blur(20px)',
+                boxShadow: sidebarShadow,
               }}
             >
               <button
@@ -260,8 +274,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                   position: 'absolute',
                   top: 16,
                   right: 16,
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid var(--border)',
+                  background: isLightMode ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.08)',
+                  border: `1px solid ${sidebarBorder}`,
                   borderRadius: 8,
                   width: 32,
                   height: 32,
