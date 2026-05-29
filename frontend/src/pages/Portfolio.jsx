@@ -34,6 +34,7 @@ import {
   calculatePortfolioSummary,
   generateSmartAdvice,
   getTopTrendingAssets,
+  trendingAssets as marketTrendingAssets,
 } from '../data/investmentData';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '../utils/format';
 
@@ -44,6 +45,14 @@ const assetClassOptions = [
   { label: 'ETF', value: 'etf' },
   { label: 'Mutual Funds', value: 'mutual_funds' },
   { label: 'Commodities', value: 'commodities' },
+];
+
+const manualAssetTypeOptions = [
+  { label: 'Stocks', value: 'stocks' },
+  { label: 'Crypto', value: 'crypto' },
+  { label: 'Gold', value: 'gold' },
+  { label: 'Bonds', value: 'bonds' },
+  { label: 'Mutual Funds', value: 'mutual_funds' },
 ];
 
 const performanceOptions = [
@@ -72,7 +81,7 @@ function QuickAddModal({ isOpen, onClose, assets, onAddInvestment, onOpenAsset }
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Quick Add Investment" maxWidth={760}>
       <p style={{ color: 'var(--text-muted)', marginBottom: 18 }}>
-        Add one of the top trending dummy investments instantly. Each click updates your dashboard totals and recent activity.
+        Add one of the top trending market assets instantly. Each click updates your dashboard totals and recent activity.
       </p>
       <div style={{ display: 'grid', gap: 12 }}>
         {assets.map((asset) => (
@@ -104,6 +113,88 @@ function QuickAddModal({ isOpen, onClose, assets, onAddInvestment, onOpenAsset }
   );
 }
 
+function ManualAddModal({ isOpen, onClose, onSubmit, form, setForm, loading, errors }) {
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((currentForm) => ({ ...currentForm, [name]: value }));
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Add Investment Manually" maxWidth={720}>
+      <form onSubmit={onSubmit}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+          <div>
+            <label className="form-label">Asset Name</label>
+            <input name="asset_name" value={form.asset_name} onChange={handleChange} className="input-field" placeholder="e.g. HDFC Bank" />
+            {errors.asset_name && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.asset_name[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Symbol</label>
+            <input name="symbol" value={form.symbol} onChange={handleChange} className="input-field" placeholder="e.g. HDFCBANK" />
+            {errors.symbol && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.symbol[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Asset Type</label>
+            <select name="asset_type" value={form.asset_type} onChange={handleChange} className="select-field">
+              {manualAssetTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {errors.asset_type && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.asset_type[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Risk Level</label>
+            <select name="risk_level" value={form.risk_level} onChange={handleChange} className="select-field">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+            {errors.risk_level && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.risk_level[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Quantity</label>
+            <input name="quantity" type="number" min="0.0001" step="0.0001" value={form.quantity} onChange={handleChange} className="input-field" placeholder="1" />
+            {errors.quantity && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.quantity[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Buy Price</label>
+            <input name="buy_price" type="number" min="0.01" step="0.01" value={form.buy_price} onChange={handleChange} className="input-field" placeholder="1000" />
+            {errors.buy_price && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.buy_price[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Current Price</label>
+            <input name="current_price" type="number" min="0.01" step="0.01" value={form.current_price} onChange={handleChange} className="input-field" placeholder="1000" />
+            {errors.current_price && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.current_price[0]}</p>}
+          </div>
+          <div>
+            <label className="form-label">Purchase Date</label>
+            <input name="purchase_date" type="date" value={form.purchase_date} onChange={handleChange} className="input-field" />
+            {errors.purchase_date && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.purchase_date[0]}</p>}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label className="form-label">Notes</label>
+          <textarea
+            name="notes"
+            value={form.notes}
+            onChange={handleChange}
+            className="input-field"
+            placeholder="Optional notes about this investment"
+            style={{ minHeight: 100, resize: 'vertical' }}
+          />
+          {errors.notes && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 4 }}>{errors.notes[0]}</p>}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 22 }}>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={loading}>Add Investment</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export default function Portfolio() {
   const dispatch = useDispatch();
   const assets = useSelector(selectPortfolioAssets);
@@ -119,25 +210,39 @@ export default function Portfolio() {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [manualAddOpen, setManualAddOpen] = useState(false);
+  const [manualAddLoading, setManualAddLoading] = useState(false);
+  const [manualAddErrors, setManualAddErrors] = useState({});
+  const [manualForm, setManualForm] = useState({
+    asset_name: '',
+    symbol: '',
+    asset_type: 'stocks',
+    risk_level: 'medium',
+    quantity: '1',
+    buy_price: '',
+    current_price: '',
+    purchase_date: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
 
   const summary = useMemo(() => calculatePortfolioSummary(assets), [assets]);
   const smartAdvice = useMemo(() => generateSmartAdvice(assets), [assets]);
-  const trendingAssets = useMemo(() => getTopTrendingAssets(assets), [assets]);
+  const portfolioTrendingAssets = useMemo(() => getTopTrendingAssets(assets), [assets]);
 
   useEffect(() => {
     const loadPortfolio = async () => {
       try {
         const [assetsRes, transactionsRes] = await Promise.all([
-          portfolioService.assets(),
+          portfolioService.list({ per_page: 1000 }),
           transactionService.list({ per_page: 30 }),
         ]);
 
         dispatch(hydratePortfolioData({
-          assets: assetsRes.data.data,
+          assets: assetsRes.data.data?.data || assetsRes.data.data || [],
           transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
         }));
       } catch {
-        // fallback to local dummy state
+        // fallback to the current state when the API is unavailable
       }
     };
 
@@ -213,6 +318,73 @@ export default function Portfolio() {
     toast.success('Investment Added Successfully');
   };
 
+  const handleManualAddInvestment = async (event) => {
+    event.preventDefault();
+    setManualAddLoading(true);
+    setManualAddErrors({});
+
+    const payload = {
+      asset_name: manualForm.asset_name.trim(),
+      symbol: manualForm.symbol.trim().toUpperCase(),
+      asset_type: manualForm.asset_type,
+      quantity: Number(manualForm.quantity),
+      buy_price: Number(manualForm.buy_price),
+      current_price: Number(manualForm.current_price || manualForm.buy_price),
+      risk_level: manualForm.risk_level,
+      purchase_date: manualForm.purchase_date,
+      notes: manualForm.notes.trim() || null,
+    };
+
+    try {
+      const res = await portfolioService.create({
+        asset_name: payload.asset_name,
+        asset_type: payload.asset_type,
+        quantity: payload.quantity,
+        buy_price: payload.buy_price,
+        current_price: payload.current_price,
+        purchase_date: payload.purchase_date,
+        notes: payload.notes,
+        ticker_symbol: payload.symbol,
+      });
+
+      const createdPortfolio = res.data.data;
+      dispatch(addInvestment({
+        id: createdPortfolio.id,
+        assetName: createdPortfolio.asset_name,
+        symbol: createdPortfolio.ticker_symbol,
+        assetType: createdPortfolio.asset_type,
+        quantity: createdPortfolio.quantity,
+        buyPrice: createdPortfolio.buy_price,
+        currentPrice: createdPortfolio.current_price,
+        riskLevel: createdPortfolio.risk_level,
+        notes: createdPortfolio.notes,
+      }));
+
+      toast.success('Manual investment added successfully');
+      setManualAddOpen(false);
+      setManualForm({
+        asset_name: '',
+        symbol: '',
+        asset_type: 'stocks',
+        risk_level: 'medium',
+        quantity: '1',
+        buy_price: '',
+        current_price: '',
+        purchase_date: new Date().toISOString().slice(0, 10),
+        notes: '',
+      });
+    } catch (err) {
+      const errData = err.response?.data;
+      if (errData?.errors) {
+        setManualAddErrors(errData.errors);
+      } else {
+        toast.error(errData?.message || 'Failed to add investment');
+      }
+    } finally {
+      setManualAddLoading(false);
+    }
+  };
+
   const handleRemoveInvestment = async (asset) => {
     try {
       await portfolioService.removeInvestment(asset.symbol);
@@ -242,14 +414,17 @@ export default function Portfolio() {
             <Sparkles size={12} /> Premium portfolio control center
           </div>
           <h1 className="section-title">Portfolio Management</h1>
-          <p className="section-subtitle">Browse your dummy holdings, inspect full asset detail, and use smart filters to find the best opportunities.</p>
+          <p className="section-subtitle">Browse your holdings, inspect full asset detail, and use smart filters to find the best opportunities.</p>
         </div>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Button variant="secondary" onClick={() => setQuickAddOpen(true)}>
             <Plus size={14} /> Quick Add
           </Button>
-          <Button onClick={() => setSelectedAsset(trendingAssets[0])}>
+          <Button variant="secondary" onClick={() => setManualAddOpen(true)}>
+            <Plus size={14} /> Add Manually
+          </Button>
+          <Button onClick={() => setSelectedAsset(portfolioTrendingAssets[0])} disabled={!portfolioTrendingAssets.length}>
             <TrendingUp size={14} /> Highlight Asset
           </Button>
         </div>
@@ -305,8 +480,13 @@ export default function Portfolio() {
                 <EmptyState
                   icon={X}
                   title="No holdings found"
-                  description="Try changing the filters or search a different asset symbol."
-                  action={<Button onClick={() => { setSearch(''); setAssetClass('all'); setPerformance('all'); setRiskLevel('all'); setSortBy('highest_profit'); }}>Reset Filters</Button>}
+                  description="Add your first investment manually or pick one from the trending list."
+                  action={(
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <Button onClick={() => setManualAddOpen(true)}>Add Manually</Button>
+                      <Button variant="secondary" onClick={() => setQuickAddOpen(true)}>Quick Add</Button>
+                    </div>
+                  )}
                 />
               </div>
             ) : (
@@ -510,7 +690,7 @@ export default function Portfolio() {
               <Button onClick={() => setQuickAddOpen(true)}>
                 <Plus size={14} /> Quick Add Investment
               </Button>
-              <Button variant="secondary" onClick={() => setSelectedAsset(trendingAssets[0])}>
+              <Button variant="secondary" onClick={() => setSelectedAsset(portfolioTrendingAssets[0])}>
                 <Target size={14} /> Open Top Asset
               </Button>
             </div>
@@ -558,9 +738,19 @@ export default function Portfolio() {
       <QuickAddModal
         isOpen={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
-        assets={trendingAssets}
+        assets={marketTrendingAssets}
         onAddInvestment={handleAddInvestment}
         onOpenAsset={(asset) => setSelectedAsset(asset)}
+      />
+
+      <ManualAddModal
+        isOpen={manualAddOpen}
+        onClose={() => setManualAddOpen(false)}
+        onSubmit={handleManualAddInvestment}
+        form={manualForm}
+        setForm={setManualForm}
+        loading={manualAddLoading}
+        errors={manualAddErrors}
       />
     </div>
   );

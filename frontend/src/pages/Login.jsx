@@ -1,22 +1,31 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { authService } from '../services';
 import { setCredentials } from '../store/authSlice';
+import { resetPortfolio } from '../store/portfolioSlice';
 import { GlassCard } from '../components/UI';
 import toast from 'react-hot-toast';
 
 export default function Login() {
   const { t } = useTranslation();
+  const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const prefilledEmail = location.state?.email;
+    if (prefilledEmail) {
+      setForm((currentForm) => ({ ...currentForm, email: prefilledEmail }));
+    }
+  }, [location.state]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -32,8 +41,9 @@ export default function Login() {
       const res = await authService.login(form);
       const { user, token } = res.data;
       dispatch(setCredentials({ user, token }));
+      dispatch(resetPortfolio());
       toast.success(`Welcome back, ${user.name}! 🎉`);
-      navigate(user.role === 'admin' ? '/admin' : '/');
+      navigate(user.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {
       const errData = err.response?.data;
       if (errData?.errors) {

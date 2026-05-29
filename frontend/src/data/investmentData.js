@@ -479,6 +479,10 @@ export function buildInitialTransactions(assets) {
 }
 
 export function buildInitialNotifications(assets) {
+  if (!assets.length) {
+    return [];
+  }
+
   const summary = calculatePortfolioSummary(assets);
   return [
     {

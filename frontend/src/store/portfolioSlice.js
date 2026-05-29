@@ -1,11 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 import {
   buildInitialNotifications,
-  buildInitialTransactions,
   calculatePortfolioSummary,
   generateSmartAdvice,
-  initialWatchlist,
-  portfolioAssets,
 } from '../data/investmentData';
 
 function roundAmount(value) {
@@ -88,33 +85,26 @@ function mapBackendAsset(asset) {
   };
 }
 
-const initialAssets = portfolioAssets;
+const createInitialState = () => ({
+  assets: [],
+  transactions: [],
+  notifications: [],
+  watchlist: [],
+});
 
-const initialState = {
-  assets: initialAssets,
-  transactions: buildInitialTransactions(initialAssets),
-  notifications: buildInitialNotifications(initialAssets),
-  watchlist: initialWatchlist,
-};
+const initialState = createInitialState();
 
 const portfolioSlice = createSlice({
   name: 'portfolio',
   initialState,
   reducers: {
+    resetPortfolio: () => createInitialState(),
     hydratePortfolioData: (state, action) => {
       const { assets = [], transactions = [], notifications = [], watchlist = [] } = action.payload || {};
-      if (assets.length) {
-        state.assets = assets.map(mapBackendAsset);
-      }
-      if (transactions.length) {
-        state.transactions = transactions;
-      }
-      if (notifications.length) {
-        state.notifications = notifications;
-      }
-      if (watchlist.length) {
-        state.watchlist = watchlist;
-      }
+      state.assets = assets.map(mapBackendAsset);
+      state.transactions = transactions;
+      state.notifications = notifications;
+      state.watchlist = watchlist;
     },
     addInvestment: (state, action) => {
       const incoming = action.payload || {};
@@ -222,6 +212,7 @@ const portfolioSlice = createSlice({
 });
 
 export const {
+  resetPortfolio,
   hydratePortfolioData,
   addInvestment,
   removeInvestment,

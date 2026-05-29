@@ -8,6 +8,7 @@ import {
   ChevronRight, Users, Activity, X, MessageSquare, Home
 } from 'lucide-react';
 import { logout } from '../store/authSlice';
+import { resetPortfolio } from '../store/portfolioSlice';
 import { authService } from '../services';
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -49,6 +50,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
       await authService.logout();
     } catch { /* ignore */ }
     dispatch(logout());
+    dispatch(resetPortfolio());
     navigate('/login');
     toast.success('Logged out successfully');
   };

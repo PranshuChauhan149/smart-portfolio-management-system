@@ -124,16 +124,16 @@ export default function Dashboard() {
     const loadDashboard = async () => {
       try {
         const [assetsRes, transactionsRes] = await Promise.all([
-          portfolioService.assets(),
+          portfolioService.list({ per_page: 1000 }),
           transactionService.list({ per_page: 20 }),
         ]);
 
         dispatch(hydratePortfolioData({
-          assets: assetsRes.data.data,
+          assets: assetsRes.data.data?.data || assetsRes.data.data || [],
           transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
         }));
       } catch {
-        // keep the local dummy data when backend is unavailable
+        // keep the current state when backend is unavailable
       }
     };
 
@@ -169,14 +169,14 @@ export default function Dashboard() {
   const handleRefresh = () => {
     setRefreshing(true);
     Promise.all([
-      portfolioService.assets(),
+      portfolioService.list({ per_page: 1000 }),
       transactionService.list({ per_page: 20 }),
       portfolioService.riskAnalysis(),
       adviceService.list(),
     ])
       .then(([assetsRes, transactionsRes]) => {
         dispatch(hydratePortfolioData({
-          assets: assetsRes.data.data,
+          assets: assetsRes.data.data?.data || assetsRes.data.data || [],
           transactions: transactionsRes.data.data?.data || transactionsRes.data.data || [],
         }));
         dispatch(refreshInsights());
@@ -263,7 +263,7 @@ export default function Dashboard() {
             Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.name?.split(' ')[0] || 'Investor'}.
           </motion.h1>
           <p className="section-subtitle">
-            Your dashboard now shows live-style dummy investing insights, trend picks, alerts, and risk signals in one premium view.
+            Your dashboard now shows your live portfolio insights, trend picks, alerts, and risk signals in one premium view.
           </p>
         </div>
 

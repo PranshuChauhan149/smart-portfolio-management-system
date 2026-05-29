@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Mail, Lock, User, Shield } from 'lucide-react';
 import { authService } from '../services';
-import { setCredentials } from '../store/authSlice';
 import { GlassCard } from '../components/UI';
 import toast from 'react-hot-toast';
 
@@ -21,7 +19,6 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -35,11 +32,9 @@ export default function Register() {
     setErrors({});
 
     try {
-      const res = await authService.register(form);
-      const { user, token } = res.data;
-      dispatch(setCredentials({ user, token }));
+      await authService.register(form);
       toast.success('Account created successfully! 🎉');
-      navigate('/');
+      navigate('/login', { replace: true, state: { email: form.email } });
     } catch (err) {
       const errData = err.response?.data;
       if (errData?.errors) {
